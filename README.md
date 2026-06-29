@@ -64,6 +64,7 @@ The conversion pipeline is also covered by integration tests which verify that t
 # Local Development
 
 ## Prerequisites
+If your name is Duncan and you are super excited and want to get stuck in immediately follow [this link](README-DUNCAN-QUICKSTART.md), otherwise stay here and plot through this lot.
 
 If you have previously only developed Python applications, install the following tools before attempting to run Studio McLeod.
 
