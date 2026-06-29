@@ -1,10 +1,11 @@
+node_modules
+dist
+.env
+.env.local
 .git
-venv
-MIRO Converter/venv
-__pycache__
+.idea
+storage
+tmp
+MIRO Converter
 *.pyc
-.DS_Store
-MIRO Converter/build
-MIRO Converter/dist
-*.dmg
-*.zip
+__pycache__

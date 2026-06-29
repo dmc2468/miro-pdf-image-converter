@@ -1,7 +1,18 @@
-FROM python:3.12-slim
+FROM node:22-bookworm-slim AS build
 
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM node:22-bookworm-slim AS runtime
+
+ENV NODE_ENV=production
+ENV PORT=8080
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -9,12 +20,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY webapp/requirements.txt /app/webapp/requirements.txt
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-RUN pip install --no-cache-dir -r /app/webapp/requirements.txt
-
-COPY webapp /app/webapp
+COPY --from=build /app/dist ./dist
 
 EXPOSE 8080
 
-CMD ["uvicorn", "webapp.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["node", "dist/server/index.js"]

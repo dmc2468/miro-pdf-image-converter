@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .field-label {
+    @apply block text-sm font-medium text-ink;
+  }
+
+  .field-input {
+    @apply mt-2 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10;
+  }
+
+  .primary-button {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-5 text-sm font-semibold text-white transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .secondary-button {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-semibold text-ink transition hover:border-ink hover:text-ink;
+  }
+
+  .icon-button {
+    @apply inline-flex h-10 max-w-full items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition hover:border-ink hover:text-ink;
+  }
+
+  .icon-button span {
+    @apply max-w-[220px] truncate;
+  }
+
+  .icon-only {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-muted transition hover:border-line hover:bg-stone-50 hover:text-ink;
+  }
+
+  .upload-zone {
+    @apply grid min-h-[220px] place-items-center gap-4 rounded-xl border-2 border-dashed border-line bg-white p-8 text-center text-muted transition;
+  }
+
+  .upload-zone-active {
+    @apply border-ink bg-ink/5 text-ink;
+  }
+
+  .status {
+    @apply rounded-md px-2.5 py-1 text-xs font-semibold capitalize;
+  }
+
+  .status-pending {
+    @apply bg-stone-100 text-muted;
+  }
+
+  .status-processing {
+    @apply bg-blue/10 text-blue;
+  }
+
+  .status-completed {
+    @apply bg-moss/10 text-moss;
+  }
+
+  .status-failed {
+    @apply bg-red-100 text-red-700;
+  }
+}
