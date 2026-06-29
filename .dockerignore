@@ -1,0 +1,10 @@
+.git
+venv
+MIRO Converter/venv
+__pycache__
+*.pyc
+.DS_Store
+MIRO Converter/build
+MIRO Converter/dist
+*.dmg
+*.zip
