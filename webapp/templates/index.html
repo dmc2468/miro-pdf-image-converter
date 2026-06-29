@@ -118,6 +118,9 @@
         {% endif %}
 
         <form action="/convert" method="post" enctype="multipart/form-data">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required>
+            
             <label for="files">PDF file(s)</label>
             <input id="files" name="files" type="file" accept="application/pdf" multiple required>
 

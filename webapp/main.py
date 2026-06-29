@@ -15,6 +15,7 @@ os.environ["PATH"] += os.pathsep + "/opt/homebrew/bin"
 
 app = FastAPI(title="Studio McLeod Miro PDF Image Converter")
 templates = Jinja2Templates(directory="webapp/templates")
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
 
 PIXEL_WIDTHS = {
@@ -59,7 +60,15 @@ async def convert_pdf(
     page_size: str = Form(...),
     scale: str = Form(...),
     orientation: str = Form(...),
+    password: str = Form(""),
 ):
+    if APP_PASSWORD and password != APP_PASSWORD:
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {"error": "Incorrect password."},
+            status_code=403,
+        )
     key = (page_size, orientation, scale)
     pixel_width = PIXEL_WIDTHS.get(key)
 
