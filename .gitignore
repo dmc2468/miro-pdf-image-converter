@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# Logs
+*.log
+
+# Packaged app / installers / archives
+*.dmg
+*.zip
+
+# Icon build folders
+*.iconset/
+
+# Temporary test files
+import tkinter as tk.py
