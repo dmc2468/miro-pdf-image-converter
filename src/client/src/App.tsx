@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Copy,
   Download,
+  ExternalLink,
   FileArchive,
   FileText,
+  GitCommit,
   Image,
   KeyRound,
   Link,
@@ -16,14 +18,15 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobZip, fetchReleaseNotes, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
-type Module = "miro-converter" | "admin-users";
+type Module = "miro-converter" | "admin-users" | "release-notes";
 
 function currentModule(): Module {
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
+  if (window.location.pathname.startsWith("/admin/release-notes")) return "release-notes";
   return "miro-converter";
 }
 
@@ -47,8 +50,12 @@ export function App() {
   }, []);
 
   function navigateTo(module: Module) {
-    const path = module === "admin-users" ? "/admin/users" : "/miro-converter";
-    window.history.pushState(null, "", path);
+    const paths: Record<Module, string> = {
+      "miro-converter": "/miro-converter",
+      "admin-users": "/admin/users",
+      "release-notes": "/admin/release-notes",
+    };
+    window.history.pushState(null, "", paths[module]);
     setActiveModule(module);
   }
 
@@ -84,7 +91,9 @@ export function App() {
             onLogout={logout}
           />
           <main className="flex-1 overflow-auto">
-            {activeModule === "admin-users" && session.user.role === "admin" ? (
+            {activeModule === "release-notes" ? (
+              <ReleaseNotesPanel />
+            ) : activeModule === "admin-users" && session.user.role === "admin" ? (
               <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
             ) : (
               <MiroConverterModule session={session} onSessionExpired={expireSession} />
@@ -212,6 +221,18 @@ function Sidebar({
             >
               <Users size={18} />
               Users
+            </button>
+            <button
+              type="button"
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                activeModule === "release-notes"
+                  ? "bg-ink text-white"
+                  : "text-muted hover:bg-stone-100 hover:text-ink"
+              }`}
+              onClick={() => onNavigate("release-notes")}
+            >
+              <GitCommit size={18} />
+              Release notes
             </button>
           </>
         ) : null}
@@ -702,6 +723,145 @@ function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: st
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+const REPO_URL = "https://github.com/dmc2468/miro-pdf-image-converter";
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInlineCode(escapedText: string): string {
+  return escapedText.replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function linkifyIssueRefs(escapedText: string): string {
+  return escapedText.replace(
+    /(^|[^\w/&])#(\d+)\b/g,
+    `$1<a href="${REPO_URL}/issues/$2" target="_blank" rel="noopener">#$2</a>`,
+  );
+}
+
+function renderCommitBody(body: string): string {
+  if (!body.trim()) return "";
+  const blocks = body.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      const hasBullets = lines.some((l) => /^-\s/.test(l));
+      if (hasBullets) {
+        const items: string[] = [];
+        let current: string | null = null;
+        for (const line of lines) {
+          if (/^-\s/.test(line)) {
+            if (current !== null) items.push(current);
+            current = line.replace(/^-\s+/, "");
+          } else if (current !== null) {
+            current += " " + line.trim();
+          }
+        }
+        if (current !== null) items.push(current);
+        const html = items
+          .map((i) => `<li>${linkifyIssueRefs(renderInlineCode(escapeHtml(i)))}</li>`)
+          .join("");
+        return `<ul>${html}</ul>`;
+      }
+      const collapsed = block.replace(/\n/g, " ");
+      return `<p>${linkifyIssueRefs(renderInlineCode(escapeHtml(collapsed)))}</p>`;
+    })
+    .join("");
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function ReleaseNotesPanel() {
+  const [entries, setEntries] = useState<import("./api").ReleaseEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await fetchReleaseNotes();
+        setEntries(result.entries);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not load release notes.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="mx-auto w-full max-w-4xl px-6 py-6">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Release notes</h2>
+          <p className="mt-0.5 text-sm text-muted">
+            <a href={REPO_URL} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-blue hover:underline">
+              {REPO_URL}
+              <ExternalLink size={13} />
+            </a>
+          </p>
+        </div>
+        <button className="icon-only" type="button" title="Refresh" onClick={() => {
+          setLoading(true);
+          setError(null);
+          void fetchReleaseNotes().then((result) => setEntries(result.entries)).catch((err) => setError(err instanceof Error ? err.message : "Could not load release notes.")).finally(() => setLoading(false));
+        }}>
+          <RefreshCw size={17} />
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
+          <RefreshCw className="animate-spin" size={16} />
+          Loading...
+        </p>
+      ) : error ? (
+        <p className="py-20 text-center text-sm text-red-600">{error}</p>
+      ) : entries.length === 0 ? (
+        <p className="py-20 text-center text-sm text-muted">No entries yet.</p>
+      ) : (
+        <ol className="space-y-4">
+          {entries.map((entry) => (
+            <li key={entry.sha} className="rounded-xl border border-line bg-white p-5">
+              <div className="mb-2 flex items-center gap-3">
+                <a
+                  href={`${REPO_URL}/commit/${entry.sha}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="font-mono text-xs text-blue hover:underline"
+                >
+                  {entry.sha}
+                </a>
+                <span className="text-xs text-muted">{entry.author}</span>
+                <span className="text-xs text-muted">{formatDate(entry.date)}</span>
+              </div>
+              <p
+                className="text-sm font-semibold text-ink"
+                dangerouslySetInnerHTML={{ __html: linkifyIssueRefs(renderInlineCode(escapeHtml(entry.subject))) }}
+              />
+              {entry.body ? (
+                <div
+                  className="release-body mt-2 text-sm text-muted"
+                  dangerouslySetInnerHTML={{ __html: renderCommitBody(entry.body) }}
+                />
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

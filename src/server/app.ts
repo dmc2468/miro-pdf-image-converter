@@ -14,6 +14,7 @@ import { isDrawingScale, isOrientation, isPaperSize } from "../shared/scaling.js
 import type { ConversionJob } from "../shared/types.js";
 import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
+import { loadBuildInfo } from "./release-notes.js";
 
 export function createApp(repositories: Repositories, objectStore: ObjectStore): express.Express {
   const app = express();
@@ -374,6 +375,24 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       }
       await repositories.jobs.delete(jobId);
       response.json({ message: "Job deleted." });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/version", async (_request, response, next) => {
+    try {
+      const info = await loadBuildInfo();
+      response.json({ version: info.version, gitSha: info.gitSha, generatedAt: info.generatedAt });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/release-notes", async (_request, response, next) => {
+    try {
+      const info = await loadBuildInfo();
+      response.json({ entries: info.entries });
     } catch (error) {
       next(error);
     }

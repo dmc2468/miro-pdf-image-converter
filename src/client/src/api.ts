@@ -142,3 +142,19 @@ export function createMagicLink(token: string, userId: string): Promise<{ magicL
 export function deleteUser(token: string, userId: string): Promise<void> {
   return apiFetch<void>(`/api/admin/users/${userId}`, { method: "DELETE", token });
 }
+
+export interface ReleaseEntry {
+  sha: string;
+  author: string;
+  date: string;
+  subject: string;
+  body: string;
+}
+
+export function fetchReleaseNotes(): Promise<{ entries: ReleaseEntry[] }> {
+  return apiFetch<{ entries: ReleaseEntry[] }>("/api/release-notes");
+}
+
+export function fetchVersion(): Promise<{ version: string; gitSha: string; generatedAt: string }> {
+  return apiFetch<{ version: string; gitSha: string; generatedAt: string }>("/api/version");
+}
