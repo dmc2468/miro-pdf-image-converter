@@ -22,6 +22,7 @@ export interface UserRepository {
   list(): Promise<UserRecord[]>;
   create(input: { email: string; name?: string; passwordHash: string; role?: UserRole }): Promise<UserRecord>;
   update(input: { id: string; name?: string; role?: UserRole; passwordHash?: string }): Promise<UserRecord | null>;
+  delete(id: string): Promise<void>;
   setMagicLink(input: { id: string; tokenHash: string; expiresAt: Date }): Promise<void>;
   markMagicLinkUsed(id: string): Promise<void>;
   ensureIndexes(): Promise<void>;
@@ -112,6 +113,10 @@ export class MongoUserRepository implements UserRepository {
     );
   }
 
+  async delete(id: string): Promise<void> {
+    await this.collection.deleteOne({ _id: id });
+  }
+
   async markMagicLinkUsed(id: string): Promise<void> {
     await this.collection.updateOne(
       { _id: id },
@@ -188,6 +193,10 @@ export class MemoryUserRepository implements UserRepository {
     user.magicLinkExpiresAt = input.expiresAt;
     user.magicLinkUsedAt = undefined;
     user.updatedAt = new Date();
+  }
+
+  async delete(id: string): Promise<void> {
+    this.users.delete(id);
   }
 
   async markMagicLinkUsed(id: string): Promise<void> {

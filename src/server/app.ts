@@ -260,6 +260,25 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.delete("/api/admin/users/:userId", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      if (request.params.userId === user.id) {
+        throw new HttpError(400, "Cannot delete yourself.");
+      }
+
+      const target = await repositories.users.findById(String(request.params.userId));
+      if (!target) {
+        throw new HttpError(404, "User not found.");
+      }
+
+      await repositories.users.delete(target._id);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/jobs", requireAuth, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;

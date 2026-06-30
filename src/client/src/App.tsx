@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
@@ -85,7 +85,7 @@ export function App() {
           />
           <main className="flex-1 overflow-auto">
             {activeModule === "admin-users" && session.user.role === "admin" ? (
-              <AdminUsersPanel token={session.token} onSessionExpired={expireSession} />
+              <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
             ) : (
               <MiroConverterModule session={session} onSessionExpired={expireSession} />
             )}
@@ -387,11 +387,11 @@ function MagicLinkPage({ onSession }: { onSession: (session: UserSession) => voi
             <input className="field-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
           {error ? <div className="mt-4"><Alert message={error} onDismiss={() => setError(null)} /></div> : null}
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button className="primary-button flex-1" type="button" disabled={busy || password.length < 10} onClick={() => void submit(true)}>
+          <div className="mt-5 flex flex-col gap-3">
+            <button className="primary-button" type="button" disabled={busy || password.length < 10} onClick={() => void submit(true)}>
               Set password and sign in
             </button>
-            <button className="secondary-button flex-1" type="button" disabled={busy} onClick={() => void submit(false)}>
+            <button className="secondary-button" type="button" disabled={busy} onClick={() => void submit(false)}>
               Sign in once
             </button>
           </div>
@@ -495,7 +495,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
   );
 }
 
-function AdminUsersPanel({ token, onSessionExpired }: { token: string; onSessionExpired: () => void }) {
+function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: string; currentUserId: string; onSessionExpired: () => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -575,6 +575,20 @@ function AdminUsersPanel({ token, onSessionExpired }: { token: string; onSession
     }
   }
 
+  async function removeUser(userId: string) {
+    setMessage(null);
+    try {
+      await deleteUser(token, userId);
+      setUsers((current) => current.filter((item) => item.id !== userId));
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not delete user.");
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       <div className="mb-6">
@@ -623,16 +637,24 @@ function AdminUsersPanel({ token, onSessionExpired }: { token: string; onSession
               <p className="px-5 py-8 text-sm text-muted">No users yet.</p>
             ) : (
               users.map((user) => (
-              <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_170px_180px]" key={user.id}>
-                <div className="min-w-0">
+              <div className="grid items-center gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_140px_minmax(0,auto)]" key={user.id}>
+                <div className="min-w-0 self-center">
                   <p className="truncate text-sm font-semibold">{user.email}</p>
                   <p className="mt-1 truncate text-xs text-muted">{user.name || "No name"} · created {new Date(user.createdAt).toLocaleDateString()}</p>
                 </div>
-                <SelectField label="Role" value={user.role} values={["user", "admin"] as const} onChange={(nextRole) => void changeRole(user, nextRole)} />
-                <button className="secondary-button self-end" type="button" onClick={() => void generateLink(user.id)}>
-                  <Link size={16} />
-                  Magic link
-                </button>
+                <select className="h-9 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none" value={user.role} onChange={(event) => void changeRole(user, event.target.value as UserRole)}>
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <button className="secondary-button h-9" type="button" onClick={() => void generateLink(user.id)}>
+                    <Link size={16} />
+                    Magic link
+                  </button>
+                  <button className="icon-only h-9 w-9 text-red-500 disabled:opacity-30" type="button" title="Delete user" disabled={user.id === currentUserId} onClick={() => void removeUser(user.id)}>
+                    <X size={17} />
+                  </button>
+                </div>
               </div>
             )))}
           </div>

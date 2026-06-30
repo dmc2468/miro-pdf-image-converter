@@ -28,6 +28,8 @@ export async function apiFetch<T>(path: string, options: RequestInit & { token?:
     throw new ApiRequestError(body.error ?? "Request failed.", response.status);
   }
 
+  if (response.status === 204) return undefined as T;
+
   return response.json() as Promise<T>;
 }
 
@@ -135,4 +137,8 @@ export function createMagicLink(token: string, userId: string): Promise<{ magicL
     method: "POST",
     token,
   });
+}
+
+export function deleteUser(token: string, userId: string): Promise<void> {
+  return apiFetch<void>(`/api/admin/users/${userId}`, { method: "DELETE", token });
 }
