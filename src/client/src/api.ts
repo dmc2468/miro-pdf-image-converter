@@ -123,6 +123,13 @@ export function changePassword(token: string, currentPassword: string, newPasswo
   });
 }
 
+export function deleteJob(token: string, jobId: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/api/jobs/${jobId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 export function createMagicLink(token: string, userId: string): Promise<{ magicLink: string; expiresAt: string }> {
   return apiFetch<{ magicLink: string; expiresAt: string }>(`/api/admin/users/${userId}/magic-link`, {
     method: "POST",

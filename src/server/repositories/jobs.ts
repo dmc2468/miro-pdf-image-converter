@@ -20,6 +20,7 @@ export interface JobRepository {
   updateFiles(id: string, userId: string, files: { sourceFiles?: StoredObject[]; generatedImages?: StoredObject[]; zipFile?: StoredObject }): Promise<void>;
   findById(id: string): Promise<JobRecord | null>;
   findByIdForUser(id: string, userId: string): Promise<JobRecord | null>;
+  delete(id: string): Promise<void>;
   listRecent(): Promise<JobRecord[]>;
   listForUser(userId: string): Promise<JobRecord[]>;
   ensureIndexes(): Promise<void>;
@@ -110,6 +111,10 @@ export class MongoJobRepository implements JobRepository {
     return this.collection.find({ userId }).sort({ createdAt: -1 }).limit(50).toArray();
   }
 
+  async delete(id: string): Promise<void> {
+    await this.collection.deleteOne({ _id: id });
+  }
+
   async listRecent(): Promise<JobRecord[]> {
     return this.collection.find({}).sort({ createdAt: -1 }).limit(50).toArray();
   }
@@ -179,6 +184,10 @@ export class MemoryJobRepository implements JobRepository {
       .filter((job) => job.userId === userId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(0, 50);
+  }
+
+  async delete(id: string): Promise<void> {
+    this.jobs.delete(id);
   }
 
   async listRecent(): Promise<JobRecord[]> {

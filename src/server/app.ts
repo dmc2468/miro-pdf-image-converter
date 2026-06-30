@@ -345,6 +345,21 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.delete("/api/jobs/:jobId", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const jobId = String(request.params.jobId);
+      const job = await findJobForRequestUser(repositories, jobId, user);
+      if (!job) {
+        throw new HttpError(404, "Job not found.");
+      }
+      await repositories.jobs.delete(jobId);
+      response.json({ message: "Job deleted." });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   const clientDir = path.resolve("dist/client");
   app.use(express.static(clientDir));
   app.get("*", (_request, response) => {

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
@@ -489,7 +489,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
           onSubmit={submitConversion}
           onDismissMessage={() => setMessage(null)}
         />
-        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onError={setMessage} onSessionExpired={onSessionExpired} />
+        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onDelete={(id) => deleteJob(session.token, id).then(() => refreshJobs())} onError={setMessage} onSessionExpired={onSessionExpired} />
       </section>
     </div>
   );
@@ -777,6 +777,7 @@ function JobsPanel({
   loading,
   token,
   onRefresh,
+  onDelete,
   onError,
   onSessionExpired,
 }: {
@@ -784,6 +785,7 @@ function JobsPanel({
   loading: boolean;
   token: string;
   onRefresh: () => void;
+  onDelete: (jobId: string) => Promise<void>;
   onError: (message: string) => void;
   onSessionExpired: () => void;
 }) {
@@ -804,15 +806,32 @@ function JobsPanel({
         ) : jobs.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted">No jobs yet.</p>
         ) : (
-          jobs.map((job) => <JobRow job={job} token={token} onError={onError} onSessionExpired={onSessionExpired} key={job._id} />)
+          jobs.map((job) => <JobRow job={job} token={token} onDelete={onDelete} onError={onError} onSessionExpired={onSessionExpired} key={job._id} />)
         )}
       </div>
     </aside>
   );
 }
 
-function JobRow({ job, token, onError, onSessionExpired }: { job: ConversionJob; token: string; onError: (message: string) => void; onSessionExpired: () => void }) {
+function JobRow({ job, token, onDelete, onError, onSessionExpired }: { job: ConversionJob; token: string; onDelete: (jobId: string) => Promise<void>; onError: (message: string) => void; onSessionExpired: () => void }) {
   const convertedBy = job.user?.name ?? job.user?.email ?? job.userId;
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete(job._id);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      onError(error instanceof Error ? error.message : "Could not delete job.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="border-b border-line px-5 py-4 last:border-b-0">
@@ -824,7 +843,18 @@ function JobRow({ job, token, onError, onSessionExpired }: { job: ConversionJob;
           <p className="mt-1 text-xs text-muted">{new Date(job.createdAt).toLocaleString()}</p>
           <p className="mt-1 truncate text-xs text-muted">Converted by {convertedBy}</p>
         </div>
-        <span className={`status status-${job.status}`}>{job.status}</span>
+        <div className="flex items-center gap-2">
+          <span className={`status status-${job.status}`}>{job.status}</span>
+          <button
+            type="button"
+            title="Delete job"
+            disabled={deleting}
+            className="shrink-0 rounded p-1 text-muted transition hover:bg-stone-100 hover:text-red-700"
+            onClick={() => void handleDelete()}
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted">
         <span>{job.generatedImages.length} JPEGs</span>
@@ -838,7 +868,6 @@ function JobRow({ job, token, onError, onSessionExpired }: { job: ConversionJob;
               jobId={job._id}
               token={token}
               key={image.key}
-              onError={onError}
             />
           ))}
         </div>
@@ -867,14 +896,13 @@ function GeneratedImagePreview({
   imageName,
   jobId,
   token,
-  onError,
 }: {
   imageName: string;
   jobId: string;
   token: string;
-  onError: (message: string) => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -885,19 +913,23 @@ function GeneratedImagePreview({
         objectUrl = nextUrl;
         if (active) setUrl(nextUrl);
       })
-      .catch((error: unknown) => {
-        onError(error instanceof Error ? error.message : "Image preview failed.");
+      .catch(() => {
+        if (active) setFailed(true);
       });
 
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [imageName, jobId, onError, token]);
+  }, [imageName, jobId, token]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-stone-50">
-      {url ? <img className="h-20 w-full object-contain" src={url} alt={imageName} /> : <div className="h-20 w-full animate-pulse bg-stone-100" />}
+      {url
+        ? <img className="h-20 w-full object-contain" src={url} alt={imageName} />
+        : failed
+          ? <div className="flex h-20 w-full items-center justify-center bg-stone-100 text-xs text-muted">Unavailable</div>
+          : <div className="h-20 w-full animate-pulse bg-stone-100" />}
       <p className="truncate border-t border-line bg-white px-2 py-1 text-[11px] text-muted">{imageName}</p>
     </div>
   );
