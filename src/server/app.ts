@@ -1,6 +1,7 @@
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import multer from "multer";
 import { config } from "./config.js";
 import { createMagicToken, hashMagicToken, hashPassword, requireAdmin, requireAuth, signToken, verifyPassword, type AuthenticatedRequest } from "./auth.js";
@@ -36,7 +37,9 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
 
   const conversionService = new ConversionService(repositories.jobs, objectStore);
 
-  app.use(cors());
+  app.set("trust proxy", 1);
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(cors({ origin: config.frontendBaseUrl }));
   app.use(express.json({ limit: "1mb" }));
 
   app.use((request, response, next) => {

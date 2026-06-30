@@ -25,6 +25,15 @@ export type AppConfig = {
   };
 };
 
+function requiredJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+  if ((process.env.NODE_ENV ?? "development") === "production") {
+    throw new Error("JWT_SECRET must be set in production.");
+  }
+  return "development-only-change-me";
+}
+
 function numberFromEnv(name: string, fallback: number): number {
   const value = process.env[name];
   if (!value) return fallback;
@@ -58,7 +67,7 @@ function s3Config(): AppConfig["s3"] {
 export const config: AppConfig = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: numberFromEnv("PORT", 8080),
-  jwtSecret: process.env.JWT_SECRET ?? "development-only-change-me",
+  jwtSecret: requiredJwtSecret(),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
   appBaseUrl: process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8080}`,
   frontendBaseUrl: process.env.FRONTEND_BASE_URL ?? process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8080}`,
