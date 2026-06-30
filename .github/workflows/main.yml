@@ -1,16 +1,15 @@
-name: Main
+name: CI/CD
 
 on:
   push:
     branches:
       - main
+      - pre-main
 
 jobs:
-  test-build-deploy:
+  verify:
+    name: Verify (tests + typecheck)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,8 +33,55 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Typecheck
+        run: pnpm typecheck
+
+  deploy:
+    name: Build and deploy to Fly (production only)
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build release notes
         run: pnpm build:release-notes
+
+      - name: Build production image and smoke test it
+        run: |
+          docker build -t studio-mcleod:ci .
+          docker run -d --name smoke -p 8080:8080 -e JWT_SECRET=ci-smoke-secret studio-mcleod:ci
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://localhost:8080/health; then
+              echo "image boots and is healthy"
+              docker rm -f smoke >/dev/null
+              break
+            fi
+            if [ "$attempt" = "20" ]; then
+              echo "container did not become healthy"
+              docker logs smoke
+              docker rm -f smoke >/dev/null
+              exit 1
+            fi
+            sleep 1
+          done
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
