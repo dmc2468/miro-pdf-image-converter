@@ -2,11 +2,11 @@ import type { Collection, Db } from "mongodb";
 import { randomUUID } from "node:crypto";
 import type { ConversionJob, DrawingScale, JobStatus, Orientation, PaperSize, StoredObject } from "../../shared/types.js";
 
-export type JobRecord = Omit<ConversionJob, "createdAt" | "updatedAt" | "completedAt"> & {
+export interface JobRecord extends Omit<ConversionJob, "createdAt" | "updatedAt" | "completedAt"> {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
-};
+}
 
 export interface JobRepository {
   create(input: {
@@ -18,7 +18,9 @@ export interface JobRepository {
   }): Promise<JobRecord>;
   updateStatus(id: string, userId: string, status: JobStatus, errorMessage?: string): Promise<void>;
   updateFiles(id: string, userId: string, files: { sourceFiles?: StoredObject[]; generatedImages?: StoredObject[]; zipFile?: StoredObject }): Promise<void>;
+  findById(id: string): Promise<JobRecord | null>;
   findByIdForUser(id: string, userId: string): Promise<JobRecord | null>;
+  listRecent(): Promise<JobRecord[]>;
   listForUser(userId: string): Promise<JobRecord[]>;
   ensureIndexes(): Promise<void>;
 }
@@ -100,8 +102,16 @@ export class MongoJobRepository implements JobRepository {
     return this.collection.findOne({ _id: id, userId });
   }
 
+  async findById(id: string): Promise<JobRecord | null> {
+    return this.collection.findOne({ _id: id });
+  }
+
   async listForUser(userId: string): Promise<JobRecord[]> {
     return this.collection.find({ userId }).sort({ createdAt: -1 }).limit(50).toArray();
+  }
+
+  async listRecent(): Promise<JobRecord[]> {
+    return this.collection.find({}).sort({ createdAt: -1 }).limit(50).toArray();
   }
 }
 
@@ -160,9 +170,19 @@ export class MemoryJobRepository implements JobRepository {
     return job?.userId === userId ? job : null;
   }
 
+  async findById(id: string): Promise<JobRecord | null> {
+    return this.jobs.get(id) ?? null;
+  }
+
   async listForUser(userId: string): Promise<JobRecord[]> {
     return [...this.jobs.values()]
       .filter((job) => job.userId === userId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, 50);
+  }
+
+  async listRecent(): Promise<JobRecord[]> {
+    return [...this.jobs.values()]
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(0, 50);
   }

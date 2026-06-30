@@ -1,6 +1,6 @@
 import { MongoClient } from "mongodb";
 import { config } from "../config.js";
-import { hashPassword } from "../auth.js";
+import { hashPassword, verifyPassword } from "../auth.js";
 import { MemoryJobRepository, MongoJobRepository, type JobRepository } from "./jobs.js";
 import { MemoryUserRepository, MongoUserRepository, type UserRepository } from "./users.js";
 
@@ -39,6 +39,16 @@ export async function createRepositories(): Promise<Repositories> {
         passwordHash: await hashPassword(config.seedUserPassword),
         role: "admin",
       });
+    } else {
+      const shouldUpdatePassword = config.nodeEnv !== "production" && !(await verifyPassword(config.seedUserPassword, existing.passwordHash));
+      if (existing.role !== "admin" || (config.seedUserName !== undefined && existing.name !== config.seedUserName) || shouldUpdatePassword) {
+        await users.update({
+          id: existing._id,
+          name: config.seedUserName,
+          passwordHash: shouldUpdatePassword ? await hashPassword(config.seedUserPassword) : undefined,
+          role: "admin",
+        });
+      }
     }
   }
 

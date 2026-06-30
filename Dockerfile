@@ -2,11 +2,13 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+RUN corepack enable && corepack prepare pnpm@10.24.0 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN pnpm build
 
 FROM node:22-bookworm-slim AS runtime
 
@@ -16,12 +18,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+RUN corepack enable && corepack prepare pnpm@10.24.0 --activate
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
 

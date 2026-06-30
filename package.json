@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "concurrently \"pnpm dev:client\" \"pnpm dev:server\"",
-    "dev:client": "vite --host 0.0.0.0",
+    "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:client": "wait-on http-get://localhost:8080/health && vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server/index.ts",
     "build": "pnpm build:client && pnpm build:server",
     "build:client": "vite build",
@@ -26,11 +27,12 @@
     "archiver": "7.0.1",
     "bcryptjs": "2.4.3",
     "cors": "2.8.5",
-    "dotenv": "^17.4.2",
+    "dotenv": "17.4.2",
     "express": "4.21.2",
     "jsonwebtoken": "9.0.2",
     "mongodb": "6.12.0",
     "multer": "2.2.0",
+    "pino": "10.3.1",
     "sharp": "0.33.5"
   },
   "devDependencies": {
@@ -54,6 +56,7 @@
     "tsx": "4.19.2",
     "typescript": "5.7.2",
     "vite": "8.1.0",
-    "vitest": "2.1.8"
+    "vitest": "2.1.8",
+    "wait-on": "^9.0.10"
   }
 }

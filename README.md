@@ -161,9 +161,9 @@ Edit `.env`.
 For a simple local installation only the following values are required:
 
 ```text
-SEED_USER_EMAIL=your@email.com
-SEED_USER_PASSWORD=choose-a-password
-SEED_USER_NAME=Your Name
+SEED_USER_EMAIL=<your email address>
+SEED_USER_PASSWORD=<choose a local password>
+SEED_USER_NAME=<your name>
 ```
 
 If no MongoDB connection is configured the application automatically falls back to an in-memory repository suitable for local development.
@@ -271,23 +271,46 @@ All secrets should be supplied through Fly.io Secrets (or your hosting platform'
 
 # Fly.io Deployment
 
-Configure the required secrets.
+Configure the required Fly runtime secrets.
 
 ```bash
 fly secrets set \
-  JWT_SECRET="..." \
-  MONGODB_URI="..." \
-  S3_REGION="..." \
-  S3_BUCKET="..." \
-  S3_ACCESS_KEY_ID="..." \
-  S3_SECRET_ACCESS_KEY="..."
+  JWT_SECRET=<long-random-secret> \
+  MONGODB_URI=<mongodb-atlas-connection-string> \
+  S3_REGION=<aws-region> \
+  S3_BUCKET=<private-bucket> \
+  S3_ACCESS_KEY_ID=<access-key> \
+  S3_SECRET_ACCESS_KEY=<secret-key>
 ```
 
-Deploy the application.
+Configure the GitHub repository secret that allows the `main` workflow to deploy to Fly.
+
+```text
+FLY_API_TOKEN=<Fly.io deploy token>
+```
+
+The application runtime secrets still belong in Fly secrets:
+
+```text
+JWT_SECRET
+MONGODB_URI
+S3_REGION
+S3_BUCKET
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+S3_ENDPOINT
+SEED_USER_EMAIL
+SEED_USER_PASSWORD
+SEED_USER_NAME
+```
+
+Deploy the application manually when needed.
 
 ```bash
 fly deploy
 ```
+
+Pushing to `main` also runs the GitHub Actions workflow, which runs tests, builds the Docker image and redeploys the Fly application.
 
 The Docker image automatically:
 

@@ -2,6 +2,7 @@ import { config } from "./config.js";
 import { createApp } from "./app.js";
 import { createRepositories } from "./repositories/index.js";
 import { createObjectStore } from "./storage/objectStore.js";
+import { logger } from "./logger.js";
 import { ensureDir } from "./utils/files.js";
 
 async function main(): Promise<void> {
@@ -11,11 +12,13 @@ async function main(): Promise<void> {
   const app = createApp(repositories, objectStore);
 
   const server = app.listen(config.port, () => {
-    console.log(`[startup] Studio McLeod listening on ${config.port}`);
-    console.log(`[startup] DB: ${config.mongoDbUri ? "MongoDB Atlas" : "in-memory"}`);
-    console.log(`[startup] Storage: ${config.s3 ? "S3" : "local files"}`);
-    console.log(`[startup] Frontend URL: ${config.frontendBaseUrl}`);
-    console.log(`[startup] Seed user: ${config.seedUserEmail ?? "none"}`);
+    logger.info({
+      port: config.port,
+      database: config.mongoDbUri ? "MongoDB Atlas" : "in-memory",
+      storage: config.s3 ? "S3" : "local files",
+      frontendBaseUrl: config.frontendBaseUrl,
+      seedUserEmail: config.seedUserEmail,
+    }, "Studio McLeod listening");
   });
 
   const shutdown = async () => {
@@ -29,6 +32,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(error);
+  logger.fatal({ error }, "server startup failed");
   process.exit(1);
 });

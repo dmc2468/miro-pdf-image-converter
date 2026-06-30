@@ -1,4 +1,4 @@
-app = "studio-mcleod-miro-converter"
+app = "studio-mcleod"
 primary_region = "lhr"
 
 [build]

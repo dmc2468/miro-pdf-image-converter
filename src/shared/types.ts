@@ -4,23 +4,30 @@ export type DrawingScale = "1:100" | "1:50" | "1:25" | "1:20";
 export type JobStatus = "pending" | "processing" | "completed" | "failed";
 export type UserRole = "admin" | "user";
 
-export type ConversionSettings = {
+export interface ConversionSettings {
   paperSize: PaperSize;
   orientation: Orientation;
   drawingScale: DrawingScale;
-};
+}
 
-export type StoredObject = {
+export interface StoredObject {
   bucket: string;
   key: string;
   originalFileName?: string;
   contentType: string;
   sizeBytes?: number;
-};
+}
 
-export type ConversionJob = {
+export interface JobUser {
+  id: string;
+  email: string;
+  name?: string;
+}
+
+export interface ConversionJob {
   _id: string;
   userId: string;
+  user?: JobUser;
   status: JobStatus;
   paperSize: PaperSize;
   orientation: Orientation;
@@ -33,9 +40,9 @@ export type ConversionJob = {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
-};
+}
 
-export type UserSession = {
+export interface UserSession {
   token: string;
   user: {
     id: string;
@@ -43,17 +50,17 @@ export type UserSession = {
     name?: string;
     role: UserRole;
   };
-};
+}
 
-export type AdminUser = {
+export interface AdminUser {
   id: string;
   email: string;
   name?: string;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
-};
+}
 
-export type ApiError = {
+export interface ApiError {
   error: string;
-};
+}

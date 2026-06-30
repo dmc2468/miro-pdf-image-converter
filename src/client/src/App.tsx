@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { createJob, createMagicLink, createUser, downloadJobZip, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, createJob, createMagicLink, createUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
@@ -29,7 +29,13 @@ function currentModule(): Module {
 export function App() {
   const [session, setSession] = useState<UserSession | null>(() => {
     const stored = localStorage.getItem(SESSION_KEY);
-    return stored ? (JSON.parse(stored) as UserSession) : null;
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored) as UserSession;
+    } catch {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
   });
   const [activeModule, setActiveModule] = useState<Module>(currentModule);
 
@@ -55,6 +61,11 @@ export function App() {
     setSession(null);
   }
 
+  function expireSession() {
+    logout();
+    window.history.replaceState(null, "", "/miro-converter");
+  }
+
   if (window.location.pathname.startsWith("/magic-link")) {
     return <MagicLinkPage onSession={storeSession} />;
   }
@@ -72,9 +83,9 @@ export function App() {
           />
           <main className="flex-1 overflow-auto">
             {activeModule === "admin-users" && session.user.role === "admin" ? (
-              <AdminUsersPanel token={session.token} />
+              <AdminUsersPanel token={session.token} onSessionExpired={expireSession} />
             ) : (
-              <MiroConverterModule session={session} />
+              <MiroConverterModule session={session} onSessionExpired={expireSession} />
             )}
           </main>
         </>
@@ -277,7 +288,7 @@ function MagicLinkPage({ onSession }: { onSession: (session: UserSession) => voi
   );
 }
 
-function MiroConverterModule({ session }: { session: UserSession }) {
+function MiroConverterModule({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -301,6 +312,12 @@ function MiroConverterModule({ session }: { session: UserSession }) {
     try {
       const result = await listJobs(session.token);
       setJobs(result.jobs);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not load recent jobs.");
     } finally {
       setJobsLoading(false);
     }
@@ -326,6 +343,10 @@ function MiroConverterModule({ session }: { session: UserSession }) {
       setSelectedFiles([]);
       await downloadJobZip(session.token, result.job._id);
     } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Conversion failed.");
       await refreshJobs();
     } finally {
@@ -355,13 +376,13 @@ function MiroConverterModule({ session }: { session: UserSession }) {
           onSubmit={submitConversion}
           onDismissMessage={() => setMessage(null)}
         />
-        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onError={setMessage} />
+        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onError={setMessage} onSessionExpired={onSessionExpired} />
       </section>
     </div>
   );
 }
 
-function AdminUsersPanel({ token }: { token: string }) {
+function AdminUsersPanel({ token, onSessionExpired }: { token: string; onSessionExpired: () => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -380,6 +401,12 @@ function AdminUsersPanel({ token }: { token: string }) {
     try {
       const result = await listUsers(token);
       setUsers(result.users);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not load users.");
     } finally {
       setUsersLoading(false);
     }
@@ -398,6 +425,10 @@ function AdminUsersPanel({ token }: { token: string }) {
       const linkResult = await createMagicLink(token, result.user.id);
       setMagicLink(linkResult.magicLink);
     } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Could not create user.");
     } finally {
       setBusy(false);
@@ -410,13 +441,25 @@ function AdminUsersPanel({ token }: { token: string }) {
       const result = await createMagicLink(token, userId);
       setMagicLink(result.magicLink);
     } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Could not create magic link.");
     }
   }
 
   async function changeRole(user: AdminUser, nextRole: UserRole) {
-    const result = await updateUser(token, user.id, { role: nextRole });
-    setUsers((current) => current.map((item) => (item.id === user.id ? result.user : item)));
+    try {
+      const result = await updateUser(token, user.id, { role: nextRole });
+      setUsers((current) => current.map((item) => (item.id === user.id ? result.user : item)));
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not update user.");
+    }
   }
 
   return (
@@ -557,16 +600,19 @@ function ConverterPanel(props: {
       </section>
 
       {props.selectedFiles.length ? (
-        <div className="rounded-xl border border-line bg-white">
-          {props.selectedFiles.map((file) => (
-            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0" key={`${file.name}-${file.size}`}>
-              <div className="flex min-w-0 items-center gap-3">
-                <FileText className="shrink-0 text-blue" size={18} />
-                <span className="truncate text-sm font-medium">{file.name}</span>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="rounded-xl border border-line bg-white">
+            {props.selectedFiles.map((file) => (
+              <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0" key={`${file.name}-${file.size}`}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <FileText className="shrink-0 text-blue" size={18} />
+                  <span className="truncate text-sm font-medium">{file.name}</span>
+                </div>
+                <span className="shrink-0 text-xs text-muted">{Math.ceil(file.size / 1024)} KB</span>
               </div>
-              <span className="shrink-0 text-xs text-muted">{Math.ceil(file.size / 1024)} KB</span>
-            </div>
-          ))}
+            ))}
+          </div>
+          <PdfPreview file={props.selectedFiles[0]} />
         </div>
       ) : null}
 
@@ -593,18 +639,40 @@ function ConverterPanel(props: {
   );
 }
 
+function PdfPreview({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-line bg-white">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <FileText className="text-blue" size={16} />
+        <p className="truncate text-xs font-semibold text-ink">{file.name}</p>
+      </div>
+      {url ? <iframe className="h-44 w-full bg-stone-50" src={`${url}#toolbar=0&navpanes=0`} title={file.name} /> : null}
+    </div>
+  );
+}
+
 function JobsPanel({
   jobs,
   loading,
   token,
   onRefresh,
   onError,
+  onSessionExpired,
 }: {
   jobs: ConversionJob[];
   loading: boolean;
   token: string;
   onRefresh: () => void;
   onError: (message: string) => void;
+  onSessionExpired: () => void;
 }) {
   return (
     <aside className="rounded-xl border border-line bg-white">
@@ -623,14 +691,16 @@ function JobsPanel({
         ) : jobs.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted">No jobs yet.</p>
         ) : (
-          jobs.map((job) => <JobRow job={job} token={token} onError={onError} key={job._id} />)
+          jobs.map((job) => <JobRow job={job} token={token} onError={onError} onSessionExpired={onSessionExpired} key={job._id} />)
         )}
       </div>
     </aside>
   );
 }
 
-function JobRow({ job, token, onError }: { job: ConversionJob; token: string; onError: (message: string) => void }) {
+function JobRow({ job, token, onError, onSessionExpired }: { job: ConversionJob; token: string; onError: (message: string) => void; onSessionExpired: () => void }) {
+  const convertedBy = job.user?.name ?? job.user?.email ?? job.userId;
+
   return (
     <div className="border-b border-line px-5 py-4 last:border-b-0">
       <div className="flex items-start justify-between gap-3">
@@ -639,6 +709,7 @@ function JobRow({ job, token, onError }: { job: ConversionJob; token: string; on
             {job.paperSize} &middot; {job.orientation} &middot; {job.drawingScale}
           </p>
           <p className="mt-1 text-xs text-muted">{new Date(job.createdAt).toLocaleString()}</p>
+          <p className="mt-1 truncate text-xs text-muted">Converted by {convertedBy}</p>
         </div>
         <span className={`status status-${job.status}`}>{job.status}</span>
       </div>
@@ -646,6 +717,19 @@ function JobRow({ job, token, onError }: { job: ConversionJob; token: string; on
         <span>{job.generatedImages.length} JPEGs</span>
         <span>{job.targetPixelWidth}px</span>
       </div>
+      {job.status === "completed" && job.generatedImages.length ? (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {job.generatedImages.slice(0, 3).map((image) => (
+            <GeneratedImagePreview
+              imageName={image.originalFileName ?? image.key.split("/").at(-1) ?? image.key}
+              jobId={job._id}
+              token={token}
+              key={image.key}
+              onError={onError}
+            />
+          ))}
+        </div>
+      ) : null}
       {job.errorMessage ? <p className="mt-3 text-sm text-red-700">{job.errorMessage}</p> : null}
       {job.status === "completed" && job.zipFile ? (
         <button
@@ -654,6 +738,7 @@ function JobRow({ job, token, onError }: { job: ConversionJob; token: string; on
           onClick={() => {
             void downloadJobZip(token, job._id).catch((error: unknown) => {
               onError(error instanceof Error ? error.message : "Download failed.");
+              if (isUnauthorised(error)) onSessionExpired();
             });
           }}
         >
@@ -663,6 +748,50 @@ function JobRow({ job, token, onError }: { job: ConversionJob; token: string; on
       ) : null}
     </div>
   );
+}
+
+function GeneratedImagePreview({
+  imageName,
+  jobId,
+  token,
+  onError,
+}: {
+  imageName: string;
+  jobId: string;
+  token: string;
+  onError: (message: string) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | undefined;
+
+    void jobImageObjectUrl(token, jobId, imageName)
+      .then((nextUrl) => {
+        objectUrl = nextUrl;
+        if (active) setUrl(nextUrl);
+      })
+      .catch((error: unknown) => {
+        onError(error instanceof Error ? error.message : "Image preview failed.");
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [imageName, jobId, onError, token]);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-line bg-stone-50">
+      {url ? <img className="h-20 w-full object-contain" src={url} alt={imageName} /> : <div className="h-20 w-full animate-pulse bg-stone-100" />}
+      <p className="truncate border-t border-line bg-white px-2 py-1 text-[11px] text-muted">{imageName}</p>
+    </div>
+  );
+}
+
+function isUnauthorised(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.statusCode === 401;
 }
 
 function SelectField<T extends string>({

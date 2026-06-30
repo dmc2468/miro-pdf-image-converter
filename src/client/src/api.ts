@@ -1,5 +1,14 @@
 import type { AdminUser, ConversionJob, UserRole, UserSession } from "../../shared/types";
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+  }
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit & { token?: string } = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
@@ -16,7 +25,7 @@ export async function apiFetch<T>(path: string, options: RequestInit & { token?:
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({ error: "Request failed." }))) as { error?: string };
-    throw new Error(body.error ?? "Request failed.");
+    throw new ApiRequestError(body.error ?? "Request failed.", response.status);
   }
 
   return response.json() as Promise<T>;
@@ -57,7 +66,7 @@ export async function downloadJobZip(token: string, jobId: string): Promise<void
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({ error: "Download failed." }))) as { error?: string };
-    throw new Error(body.error ?? "Download failed.");
+    throw new ApiRequestError(body.error ?? "Download failed.", response.status);
   }
 
   const blob = await response.blob();
@@ -69,6 +78,21 @@ export async function downloadJobZip(token: string, jobId: string): Promise<void
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function jobImageObjectUrl(token: string, jobId: string, imageName: string): Promise<string> {
+  const response = await fetch(`/api/jobs/${jobId}/images/${encodeURIComponent(imageName)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({ error: "Image preview failed." }))) as { error?: string };
+    throw new ApiRequestError(body.error ?? "Image preview failed.", response.status);
+  }
+
+  return URL.createObjectURL(await response.blob());
 }
 
 export function listUsers(token: string): Promise<{ users: AdminUser[] }> {

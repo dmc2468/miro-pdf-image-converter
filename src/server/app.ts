@@ -6,11 +6,13 @@ import { config } from "./config.js";
 import { createMagicToken, hashMagicToken, hashPassword, requireAdmin, requireAuth, signToken, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { HttpError, publicErrorMessage } from "./errors.js";
 import type { Repositories } from "./repositories/index.js";
-import { serializeJob } from "./repositories/jobs.js";
-import { serializeAdminUser } from "./repositories/users.js";
+import { serializeJob, type JobRecord } from "./repositories/jobs.js";
+import { serializeAdminUser, type UserRecord } from "./repositories/users.js";
 import type { ObjectStore } from "./storage/objectStore.js";
 import { ConversionService } from "./services/conversion.js";
 import { isDrawingScale, isOrientation, isPaperSize } from "../shared/scaling.js";
+import type { ConversionJob } from "../shared/types.js";
+import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 
 export function createApp(repositories: Repositories, objectStore: ObjectStore): express.Express {
@@ -36,11 +38,16 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
 
-  app.use((request, _response, next) => {
+  app.use((request, response, next) => {
     const start = Date.now();
-    _response.on("finish", () => {
+    response.on("finish", () => {
       const elapsed = Date.now() - start;
-      console.log(`[request] ${request.method} ${request.path} ${_response.statusCode} ${elapsed}ms`);
+      logger.info({
+        method: request.method,
+        path: request.path,
+        statusCode: response.statusCode,
+        elapsedMs: elapsed,
+      }, "request completed");
     });
     next();
   });
@@ -57,29 +64,29 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     try {
       const { token, password } = request.body as { token?: string; password?: string };
       if (!token) {
-        console.log(`[auth] magic-link missing token from ${request.ip}`);
+        logger.warn({ ip: request.ip }, "magic link missing token");
         throw new HttpError(400, "Magic link token is required.");
       }
       if (password && password.length < 10) {
-        console.log(`[auth] magic-link password too short from ${request.ip}`);
+        logger.warn({ ip: request.ip }, "magic link password too short");
         throw new HttpError(400, "Password must be at least 10 characters.");
       }
 
       const user = await repositories.users.findByMagicLinkHash(hashMagicToken(token));
       if (!user) {
-        console.log(`[auth] magic-link no user for token from ${request.ip}`);
+        logger.warn({ ip: request.ip }, "magic link user not found");
         throw new HttpError(401, "This magic link is invalid or has expired.");
       }
       if (!user.magicLinkExpiresAt || user.magicLinkExpiresAt.getTime() < Date.now()) {
-        console.log(`[auth] magic-link expired for ${user.email} from ${request.ip}`);
+        logger.warn({ email: user.email, ip: request.ip }, "magic link expired");
         throw new HttpError(401, "This magic link is invalid or has expired.");
       }
       if (user.magicLinkUsedAt) {
-        console.log(`[auth] magic-link already used by ${user.email} from ${request.ip}`);
+        logger.warn({ email: user.email, ip: request.ip }, "magic link already used");
         throw new HttpError(401, "This magic link has already been used.");
       }
 
-      console.log(`[auth] magic-link ok: ${user.email} from ${request.ip}`);
+      logger.info({ email: user.email, role: user.role, ip: request.ip }, "magic link authenticated");
 
       const updatedUser = password ? await repositories.users.update({ id: user._id, passwordHash: await hashPassword(password) }) : user;
       await repositories.users.markMagicLinkUsed(user._id);
@@ -102,23 +109,23 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     try {
       const { email, password } = request.body as { email?: string; password?: string };
       if (!email || !password) {
-        console.log(`[auth] login missing fields from ${request.ip}`);
+        logger.warn({ ip: request.ip }, "login missing fields");
         throw new HttpError(400, "Email and password are required.");
       }
 
       const user = await repositories.users.findByEmail(email);
       if (!user) {
-        console.log(`[auth] login failed: no user for ${email} from ${request.ip}`);
+        logger.warn({ email, ip: request.ip }, "login user not found");
         throw new HttpError(401, "Email or password was not recognised.");
       }
 
       const passwordOk = await verifyPassword(password, user.passwordHash);
       if (!passwordOk) {
-        console.log(`[auth] login failed: wrong password for ${email} from ${request.ip}`);
+        logger.warn({ email, ip: request.ip }, "login password mismatch");
         throw new HttpError(401, "Email or password was not recognised.");
       }
 
-      console.log(`[auth] login ok: ${email} (${user.role}) from ${request.ip}`);
+      logger.info({ email, role: user.role, ip: request.ip }, "login authenticated");
       response.json({
         token: signToken(user),
         user: {
@@ -222,8 +229,9 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   app.get("/api/jobs", requireAuth, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;
-      const jobs = await repositories.jobs.listForUser(user.id);
-      response.json({ jobs: jobs.map(serializeJob) });
+      const jobs = user.role === "admin" ? await repositories.jobs.listRecent() : await repositories.jobs.listForUser(user.id);
+      const users = await Promise.all(jobs.map((job) => repositories.users.findById(job.userId)));
+      response.json({ jobs: jobs.map((job, index) => serializeJobWithUser(job, users[index])) });
     } catch (error) {
       next(error);
     }
@@ -265,7 +273,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     try {
       const user = (request as AuthenticatedRequest).user;
       const jobId = String(request.params.jobId);
-      const job = await repositories.jobs.findByIdForUser(jobId, user.id);
+      const job = await findJobForRequestUser(repositories, jobId, user);
       if (!job?.zipFile) {
         throw new HttpError(404, "The ZIP file is not available.");
       }
@@ -273,6 +281,30 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       const stream = await objectStore.getReadStream(job.zipFile.key);
       response.setHeader("Content-Type", "application/zip");
       response.setHeader("Content-Disposition", 'attachment; filename="miro_converted_jpegs.zip"');
+      stream.pipe(response);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/jobs/:jobId/images/:imageName", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const jobId = String(request.params.jobId);
+      const job = await findJobForRequestUser(repositories, jobId, user);
+      if (!job) {
+        throw new HttpError(404, "Job not found.");
+      }
+
+      const imageName = String(request.params.imageName);
+      const image = job.generatedImages.find((item) => path.basename(item.key) === imageName || item.originalFileName === imageName);
+      if (!image) {
+        throw new HttpError(404, "The generated image is not available.");
+      }
+
+      const stream = await objectStore.getReadStream(image.key);
+      response.setHeader("Content-Type", image.contentType);
+      response.setHeader("Content-Disposition", `inline; filename="${path.basename(image.originalFileName ?? image.key)}"`);
       stream.pipe(response);
     } catch (error) {
       next(error);
@@ -291,4 +323,22 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   });
 
   return app;
+}
+
+function serializeJobWithUser(job: JobRecord, user: UserRecord | null): ConversionJob {
+  return {
+    ...serializeJob(job),
+    user: user ? {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+    } : undefined,
+  };
+}
+
+function findJobForRequestUser(repositories: Repositories, jobId: string, user: AuthenticatedRequest["user"]): Promise<JobRecord | null> {
+  if (user.role === "admin") {
+    return repositories.jobs.findById(jobId);
+  }
+  return repositories.jobs.findByIdForUser(jobId, user.id);
 }

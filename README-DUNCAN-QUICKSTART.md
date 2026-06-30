@@ -63,7 +63,7 @@ pnpm install
 Create:
 
 ``` text
-server/.env
+.env
 ```
 
 Paste in:
@@ -72,14 +72,14 @@ Paste in:
 NODE_ENV=development
 PORT=8080
 
-JWT_SECRET=change-me-for-local-development
+JWT_SECRET=<generate a local JWT secret>
 JWT_EXPIRES_IN=12h
 
 APP_BASE_URL=http://localhost:8080
 FRONTEND_BASE_URL=http://localhost:5173
 
 # MongoDB
-MONGODB_URI=mongodb+srv://studiomcleodcom_db_user:GLpdYblvyVg9rmJK@studiomcleod.hbyof8t.mongodb.net/?appName=StudioMcleod
+MONGODB_URI=<ask Nick for the MongoDB Atlas connection string>
 MONGODB_DB_NAME=miro_pdf_image_converter
 
 # AWS S3 (fill these in when you have them)
@@ -91,7 +91,7 @@ S3_ENDPOINT=
 
 # Initial admin account
 SEED_USER_EMAIL=duncan@example.com
-SEED_USER_PASSWORD=temporary
+SEED_USER_PASSWORD=<choose a temporary password>
 SEED_USER_NAME=Duncan Mcleod
 
 MAX_UPLOAD_MB=50
