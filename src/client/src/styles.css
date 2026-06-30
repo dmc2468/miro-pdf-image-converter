@@ -96,4 +96,20 @@
   .release-body code {
     @apply rounded bg-stone-100 px-1 py-0.5 font-mono text-xs text-ink;
   }
+
+  .release-body h2 {
+    @apply mb-2 mt-4 text-base font-semibold text-ink;
+  }
+
+  .release-body h2:first-child {
+    @apply mt-0;
+  }
+
+  .release-body h3 {
+    @apply mb-2 mt-3 text-sm font-semibold text-ink;
+  }
+
+  .release-body h3:first-child {
+    @apply mt-0;
+  }
 }

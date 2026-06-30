@@ -755,6 +755,12 @@ function renderCommitBody(body: string): string {
   return blocks
     .map((block) => {
       const lines = block.split("\n");
+      const isHeading = lines.length === 1 && /^#{1,3}\s/.test(lines[0]!);
+      if (isHeading) {
+        const level = lines[0]!.match(/^#{1,3}/)![0]!.length;
+        const text = lines[0]!.replace(/^#{1,3}\s+/, "");
+        return `<h${level}>${linkifyIssueRefs(renderInlineCode(escapeHtml(text)))}</h${level}>`;
+      }
       const hasBullets = lines.some((l) => /^-\s/.test(l));
       if (hasBullets) {
         const items: string[] = [];
