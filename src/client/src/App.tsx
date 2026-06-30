@@ -504,6 +504,8 @@ function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: st
   const [magicLink, setMagicLink] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editingNameDraft, setEditingNameDraft] = useState("");
 
   useEffect(() => {
     void refreshUsers();
@@ -566,6 +568,20 @@ function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: st
     try {
       const result = await updateUser(token, user.id, { role: nextRole });
       setUsers((current) => current.map((item) => (item.id === user.id ? result.user : item)));
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not update user.");
+    }
+  }
+
+  async function updateName(userId: string) {
+    setEditingName(null);
+    try {
+      const result = await updateUser(token, userId, { name: editingNameDraft || undefined });
+      setUsers((current) => current.map((item) => (item.id === userId ? result.user : item)));
     } catch (error) {
       if (isUnauthorised(error)) {
         onSessionExpired();
@@ -640,7 +656,33 @@ function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: st
               <div className="grid items-center gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_140px_minmax(0,auto)]" key={user.id}>
                 <div className="min-w-0 self-center">
                   <p className="truncate text-sm font-semibold">{user.email}</p>
-                  <p className="mt-1 truncate text-xs text-muted">{user.name || "No name"} · created {new Date(user.createdAt).toLocaleDateString()}</p>
+                  <div className="mt-1">
+                    {editingName === user.id ? (
+                      <input
+                        className="h-7 w-full rounded border border-line bg-white px-2 text-xs text-ink outline-none"
+                        type="text"
+                        value={editingNameDraft}
+                        onChange={(event) => setEditingNameDraft(event.target.value)}
+                        onBlur={() => void updateName(user.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") void updateName(user.id);
+                          if (event.key === "Escape") setEditingName(null);
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span
+                        className="cursor-pointer truncate text-xs text-muted hover:text-ink"
+                        title="Click to edit name"
+                        onClick={() => {
+                          setEditingName(user.id);
+                          setEditingNameDraft(user.name || "");
+                        }}
+                      >
+                        {user.name || "No name"} · created {new Date(user.createdAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <select className="h-9 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none" value={user.role} onChange={(event) => void changeRole(user, event.target.value as UserRole)}>
                   <option value="user">user</option>
