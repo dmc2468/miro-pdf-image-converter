@@ -5,6 +5,7 @@ import {
   FileArchive,
   FileText,
   Image,
+  KeyRound,
   Link,
   LogOut,
   RefreshCw,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, createJob, createMagicLink, createUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, downloadJobZip, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
@@ -78,6 +79,7 @@ export function App() {
             activeModule={activeModule}
             role={session.user.role}
             email={session.user.email}
+            token={session.token}
             onNavigate={navigateTo}
             onLogout={logout}
           />
@@ -112,15 +114,59 @@ function Sidebar({
   activeModule,
   role,
   email,
+  token,
   onNavigate,
   onLogout,
 }: {
   activeModule: Module;
   role: UserRole;
   email: string;
+  token: string;
   onNavigate: (module: Module) => void;
   onLogout: () => void;
 }) {
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+
+  function resetPasswordForm() {
+    setShowPasswordForm(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError(null);
+    setPasswordSuccess(null);
+  }
+
+  async function submitPasswordChange() {
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+    if (newPassword.length < 10) {
+      setPasswordError("New password must be at least 10 characters.");
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      const result = await changePassword(token, currentPassword, newPassword);
+      setPasswordSuccess(result.message);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : "Could not change password.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
   return (
     <aside className="flex w-64 flex-col border-r border-line bg-white">
       <div className="flex items-center gap-3 border-b border-line px-5 py-5">
@@ -171,17 +217,84 @@ function Sidebar({
         ) : null}
       </nav>
 
-      <div className="border-t border-line px-3 py-4">
-        <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-muted">
-          <span className="truncate">{email}</span>
-          <button
-            type="button"
-            title="Log out"
-            className="shrink-0 rounded p-1 transition hover:bg-stone-100 hover:text-ink"
-            onClick={onLogout}
-          >
-            <LogOut size={16} />
-          </button>
+      <div className="border-t border-line">
+        <button
+          type="button"
+          className={`flex w-full items-center gap-3 px-5 py-3 text-sm font-medium transition ${
+            showPasswordForm
+              ? "bg-stone-50 text-ink"
+              : "text-muted hover:bg-stone-50 hover:text-ink"
+          }`}
+          onClick={() => setShowPasswordForm(!showPasswordForm)}
+        >
+          <KeyRound size={16} />
+          Change password
+        </button>
+
+        {showPasswordForm ? (
+          <div className="border-t border-line px-4 py-4 space-y-3">
+            <label className="field-label">
+              Current password
+              <input
+                className="field-input"
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              New password
+              <input
+                className="field-input"
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              Confirm new password
+              <input
+                className="field-input"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+            {passwordError ? <p className="text-xs text-red-700">{passwordError}</p> : null}
+            {passwordSuccess ? <p className="text-xs text-green-700">{passwordSuccess}</p> : null}
+            <div className="flex gap-2">
+              <button
+                className="primary-button flex-1"
+                type="button"
+                disabled={passwordBusy || !currentPassword || !newPassword || !confirmPassword}
+                onClick={() => void submitPasswordChange()}
+              >
+                {passwordBusy ? <RefreshCw className="animate-spin" size={16} /> : null}
+                Save
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={resetPasswordForm}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="border-t border-line px-3 py-4">
+          <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-muted">
+            <span className="truncate">{email}</span>
+            <button
+              type="button"
+              title="Log out"
+              className="shrink-0 rounded p-1 transition hover:bg-stone-100 hover:text-ink"
+              onClick={onLogout}
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </aside>

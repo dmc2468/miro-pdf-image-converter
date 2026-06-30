@@ -115,6 +115,14 @@ export function updateUser(token: string, userId: string, input: { name?: string
   });
 }
 
+export function changePassword(token: string, currentPassword: string, newPassword: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>("/api/auth/password", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
 export function createMagicLink(token: string, userId: string): Promise<{ magicLink: string; expiresAt: string }> {
   return apiFetch<{ magicLink: string; expiresAt: string }>(`/api/admin/users/${userId}/magic-link`, {
     method: "POST",

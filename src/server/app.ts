@@ -140,6 +140,40 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.patch("/api/auth/password", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const { currentPassword, newPassword } = request.body as { currentPassword?: string; newPassword?: string };
+
+      if (!currentPassword || !newPassword) {
+        throw new HttpError(400, "Current password and new password are required.");
+      }
+      if (newPassword.length < 10) {
+        throw new HttpError(400, "New password must be at least 10 characters.");
+      }
+
+      const storedUser = await repositories.users.findById(user.id);
+      if (!storedUser?.passwordHash) {
+        throw new HttpError(400, "You do not have a password set. Use a magic link to set one.");
+      }
+
+      const passwordOk = await verifyPassword(currentPassword, storedUser.passwordHash);
+      if (!passwordOk) {
+        throw new HttpError(401, "Current password is incorrect.");
+      }
+
+      await repositories.users.update({
+        id: user.id,
+        passwordHash: await hashPassword(newPassword),
+      });
+
+      logger.info({ email: user.email }, "password changed");
+      response.json({ message: "Password updated." });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/admin/users", requireAuth, requireAdmin, async (_request, response, next) => {
     try {
       const users = await repositories.users.list();
