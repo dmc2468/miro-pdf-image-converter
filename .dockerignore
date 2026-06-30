@@ -5,6 +5,3 @@ node_modules
 .idea
 storage
 tmp
-MIRO Converter
-*.pyc
-__pycache__

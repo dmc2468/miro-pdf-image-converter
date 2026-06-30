@@ -11,7 +11,7 @@
 
 ## Project Overview
 
-- **Purpose**: Convert architectural PDF drawings into correctly scaled JPEG images for importing into Miro. Online version of a Python desktop app (`MIRO Converter/PDFtoJPEGscaler.py`).
+- **Purpose**: Convert architectural PDF drawings into correctly scaled JPEG images for importing into Miro.
 - **Architecture**: Node 22+, Express, Vite + React frontend, Tailwind CSS, MongoDB Atlas, S3-compatible object storage, Poppler `pdftoppm` + `sharp` for rendering.
 - **Auth**: JWT-based. Bcrypt password hashing. Admin-created users with one-time magic links. No self-registration.
 - **Repository**: https://github.com/nbarrett/miro-pdf-image-converter
@@ -54,6 +54,23 @@ Login is rate-limited (5 attempts per 60s per IP).
 - **Paragraph-style body** — root cause + supporting fixes
 - **100% trunk-based on `main`** — no PRs, no branches, no worktrees
 - **No literal `\n`** in commit messages
+
+### Commit messages are the app's release notes
+
+The release-notes panel (`/admin/release-notes`) renders each commit's subject and body straight from `git log`, so **every commit message is user-facing**. Write the body in the limited markdown that `renderCommitBody` in `src/client/src/App.tsx` actually supports:
+
+- **Headings**: a line starting with `#`, `##` or `###`, alone in its own block (blank line above and below). Use these to group a larger change.
+- **Bullets**: lines starting with `- `. Wrapped continuation lines fold into the same bullet.
+- **Inline code**: `` `backticks` `` for filenames, commands and identifiers.
+- **Issue links**: a bare `#123` becomes a link to the repo's issues.
+- **Paragraphs**: any other block; a blank line separates blocks.
+
+Not supported, so avoid (these render as literal text): `**bold**`, italics, markdown links `[text](url)`, numbered lists, code fences, and tables.
+
+Format rules:
+- Keep the Conventional-commits subject as the one-line summary.
+- Separate blocks with real blank lines (use multiple `-m` flags or a heredoc body). "No literal `\n`" means never the two characters backslash-n, not "single line only".
+- Scale the body to the change: a trivial tidy needs no body; a feature or multi-part change earns headings and bullets so the panel reads well.
 
 ## Backend Patterns
 
@@ -115,4 +132,3 @@ GitHub Actions on push to `main`: install → test → build → `flyctl deploy`
 - `src/server/services/` — conversion pipeline, ZIP creation
 - `src/server/repositories/` — MongoDB / in-memory user and job repositories
 - `src/server/storage/` — S3 / local object store
-- `MIRO Converter/` — original Python desktop app (behaviour reference only)

@@ -6,34 +6,6 @@ Create an online version of the existing Studio McLeod desktop PDF-to-JPEG conve
 
 The online version should preserve the current scaling behaviour so architectural PDF drawings can be converted into correctly scaled JPEG images for importing into Miro.
 
-## Current desktop app
-
-The current app is a Python desktop app.
-
-Key source file:
-
-MIRO Converter/PDFtoJPEGscaler.py
-
-Current Python requirements:
-
-- tkinterdnd2
-- pdf2image
-- pillow
-
-The current app uses Poppler through pdf2image to render PDF pages.
-
-## Current workflow
-
-The user can:
-
-1. Drag or select one or more PDF files.
-2. Choose page size: A3 or A4.
-3. Choose drawing scale: 1:100, 1:50, 1:25 or 1:20.
-4. Choose orientation: Landscape or Portrait.
-5. Press Process.
-6. The app converts each PDF page into a JPEG.
-7. JPEGs are saved to the Downloads folder.
-
 ## Required online MVP workflow
 
 The web app should allow the user to:
@@ -105,15 +77,15 @@ The online version should:
 - delete files after processing or after a short expiry period;
 - avoid exposing uploaded files through public URLs.
 
-## Suggested technical approach
+## Technical approach
 
-A suitable MVP stack could be:
+The implemented stack is:
 
-- Python backend using FastAPI or Flask.
-- Simple HTML/CSS/JavaScript frontend.
-- pdf2image and Poppler for PDF rendering.
-- Pillow for resizing and JPEG output.
-- Python zipfile module for ZIP downloads.
+- TypeScript backend using Express.
+- React + Vite frontend with Tailwind CSS.
+- Poppler (`pdftoppm`) for PDF rendering.
+- Sharp for resizing and JPEG output.
+- `archiver` for ZIP downloads.
 - Temporary folders for uploads and generated files.
 
 ## Later features

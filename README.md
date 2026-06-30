@@ -4,7 +4,7 @@ Studio McLeod is a modular web platform for delivering specialist applications a
 
 The first module provides high-fidelity conversion of architectural PDF drawings into correctly scaled JPEG images for importing into Miro.
 
-The original Python desktop application remains in `MIRO Converter/PDFtoJPEGscaler.py` as the behavioural reference implementation. The hosted application has been rebuilt as a modern full-stack TypeScript platform to provide authentication, user management, cloud storage and a foundation for future Studio McLeod modules.
+The hosted application is a full-stack TypeScript platform providing authentication, user management, cloud storage and a foundation for future Studio McLeod modules.
 
 ---
 
@@ -50,17 +50,13 @@ The original Python desktop application remains in `MIRO Converter/PDFtoJPEGscal
 
 # Behaviour Parity
 
-The original Python desktop application remains the reference implementation.
-
 The image scaling rules are shared across the application in:
 
 ```text
 src/shared/scaling.ts
 ```
 
-Automated parity tests compare the TypeScript implementation directly against the original Python scaling tables to ensure future changes cannot accidentally alter image dimensions.
-
-The conversion pipeline is also covered by integration tests which verify that the generated JPEG dimensions exactly match those produced by the original desktop application.
+Automated tests lock the scaling table to a known snapshot so future changes cannot accidentally alter image dimensions, and the conversion pipeline is covered by integration tests verifying the generated JPEG dimensions.
 
 ---
 
@@ -69,7 +65,7 @@ The conversion pipeline is also covered by integration tests which verify that t
 ## Prerequisites
 If your name is Duncan and you want to get started quickly follow [this link](README-DUNCAN-QUICKSTART.md), otherwise stay here and read through.
 
-If you have previously only developed Python applications, install the following tools before attempting to run Studio McLeod.
+Install the following tools before attempting to run Studio McLeod.
 
 ### 1. Install Git
 
@@ -397,11 +393,10 @@ Studio McLeod has been designed as a modular platform rather than a single-purpo
 
 The Miro PDF Converter is the first module. Future modules will share the same:
 
-* authentication
-* user management
-* administration interface
-* storage layer
-* deployment pipeline
-* infrastructure
+* authentication & user management ([JSON Web Tokens (JWT)](https://jwt.io) holding the signed-in user's session in the browser)
+* administration interface (the app itself)
+* storage layer ([MongoDB](https://www.mongodb.com/atlas) / [Amazon S3](https://aws.amazon.com/s3/))
+* deployment pipeline ([GitHub Actions](https://github.com/features/actions))
+* infrastructure ([Fly.io](https://fly.io))
 
 This allows additional Studio McLeod applications to be introduced without duplicating the underlying platform.

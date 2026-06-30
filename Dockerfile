@@ -14,7 +14,6 @@ FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
