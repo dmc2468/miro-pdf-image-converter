@@ -140,7 +140,9 @@ export class LocalObjectStore implements ObjectStore {
   }
 
   async getReadStream(key: string): Promise<NodeJS.ReadableStream> {
-    return fs.createReadStream(this.pathForKey(key));
+    const filePath = this.pathForKey(key);
+    await fsp.access(filePath);
+    return fs.createReadStream(filePath);
   }
 
   private pathForKey(key: string): string {

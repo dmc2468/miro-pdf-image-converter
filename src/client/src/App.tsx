@@ -713,7 +713,7 @@ function ConverterPanel(props: {
       </section>
 
       {props.selectedFiles.length ? (
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="space-y-4">
           <div className="rounded-xl border border-line bg-white">
             {props.selectedFiles.map((file) => (
               <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0" key={`${file.name}-${file.size}`}>
@@ -767,7 +767,7 @@ function PdfPreview({ file }: { file: File }) {
         <FileText className="text-blue" size={16} />
         <p className="truncate text-xs font-semibold text-ink">{file.name}</p>
       </div>
-      {url ? <iframe className="h-44 w-full bg-stone-50" src={`${url}#toolbar=0&navpanes=0`} title={file.name} /> : null}
+      {url ? <iframe className="h-[500px] w-full bg-stone-50" src={`${url}#toolbar=0&navpanes=0`} title={file.name} /> : null}
     </div>
   );
 }
@@ -903,6 +903,7 @@ function GeneratedImagePreview({
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -923,15 +924,50 @@ function GeneratedImagePreview({
     };
   }, [imageName, jobId, token]);
 
+  useEffect(() => {
+    if (!showModal) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowModal(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showModal]);
+
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-stone-50">
-      {url
-        ? <img className="h-20 w-full object-contain" src={url} alt={imageName} />
-        : failed
-          ? <div className="flex h-20 w-full items-center justify-center bg-stone-100 text-xs text-muted">Unavailable</div>
-          : <div className="h-20 w-full animate-pulse bg-stone-100" />}
-      <p className="truncate border-t border-line bg-white px-2 py-1 text-[11px] text-muted">{imageName}</p>
-    </div>
+    <>
+      <div
+        className="cursor-pointer overflow-hidden rounded-lg border border-line bg-stone-50"
+        onClick={() => url && setShowModal(true)}
+      >
+        {url
+          ? <img className="h-20 w-full object-contain" src={url} alt={imageName} />
+          : failed
+            ? <div className="flex h-20 w-full items-center justify-center bg-stone-100 text-xs text-muted">Unavailable</div>
+            : <div className="h-20 w-full animate-pulse bg-stone-100" />}
+        <p className="truncate border-t border-line bg-white px-2 py-1 text-[11px] text-muted">{imageName}</p>
+      </div>
+
+      {showModal && url ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setShowModal(false)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-white/20 p-2 text-white transition hover:bg-white/40"
+            onClick={() => setShowModal(false)}
+          >
+            <X size={24} />
+          </button>
+          <img
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            src={url}
+            alt={imageName}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

@@ -45,10 +45,11 @@ function s3Config(): AppConfig["s3"] {
     return undefined;
   }
 
+  const endpoint = process.env.S3_ENDPOINT || undefined;
   return {
     region,
     bucket,
-    endpoint: process.env.S3_ENDPOINT,
+    ...(endpoint ? { endpoint } : {}),
     accessKeyId,
     secretAccessKey,
   };

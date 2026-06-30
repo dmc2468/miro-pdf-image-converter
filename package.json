@@ -5,8 +5,8 @@
   "type": "module",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:client\"",
-    "dev:client": "wait-on http-get://localhost:8080/health && vite --host 0.0.0.0",
+    "dev": "vite build && concurrently -k \"vite build --watch\" \"tsx watch src/server/index.ts\"",
+    "dev:proxy": "wait-on http-get://localhost:8080/health && vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server/index.ts",
     "build": "pnpm build:client && pnpm build:server",
     "build:client": "vite build",
