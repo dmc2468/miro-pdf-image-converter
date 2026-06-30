@@ -1,4 +1,6 @@
-ignoredBuiltDependencies:
+allowBuilds:
+  esbuild: true
+  sharp: true
+onlyBuiltDependencies:
   - esbuild
   - sharp
-onlyBuiltDependencies: '["esbuild","sharp"]'

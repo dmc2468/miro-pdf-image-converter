@@ -1,6 +1,6 @@
 export type PaperSize = "A3" | "A4";
 export type Orientation = "Landscape" | "Portrait";
-export type DrawingScale = "1:100" | "1:50" | "1:25" | "1:20";
+export type DrawingScale = "1:500" | "1:250" | "1:200" | "1:100" | "1:50" | "1:25" | "1:20";
 export type JobStatus = "pending" | "processing" | "completed" | "failed";
 export type UserRole = "admin" | "user";
 

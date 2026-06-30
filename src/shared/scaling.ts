@@ -2,17 +2,23 @@ import type { DrawingScale, Orientation, PaperSize } from "./types.js";
 
 export const PAPER_SIZES = ["A3", "A4"] as const satisfies readonly PaperSize[];
 export const ORIENTATIONS = ["Landscape", "Portrait"] as const satisfies readonly Orientation[];
-export const DRAWING_SCALES = ["1:100", "1:50", "1:25", "1:20"] as const satisfies readonly DrawingScale[];
+export const DRAWING_SCALES = ["1:500", "1:250", "1:200", "1:100", "1:50", "1:25", "1:20"] as const satisfies readonly DrawingScale[];
 
 export const PIXEL_WIDTHS: Record<PaperSize, Record<Orientation, Record<DrawingScale, number>>> = {
   A3: {
     Landscape: {
+      "1:500": 20900,
+      "1:250": 10450,
+      "1:200": 8360,
       "1:100": 4180,
       "1:50": 2090,
       "1:25": 1045,
       "1:20": 836,
     },
     Portrait: {
+      "1:500": 20900,
+      "1:250": 10450,
+      "1:200": 8360,
       "1:100": 4180,
       "1:50": 1484,
       "1:25": 742,
@@ -21,12 +27,18 @@ export const PIXEL_WIDTHS: Record<PaperSize, Record<Orientation, Record<DrawingS
   },
   A4: {
     Landscape: {
+      "1:500": 14840,
+      "1:250": 7420,
+      "1:200": 5936,
       "1:100": 2968,
       "1:50": 1484,
       "1:25": 742,
       "1:20": 591,
     },
     Portrait: {
+      "1:500": 10490,
+      "1:250": 5245,
+      "1:200": 4196,
       "1:100": 2098,
       "1:50": 1049,
       "1:25": 525,

@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 dist/
 .env
 .env.local
@@ -7,3 +8,13 @@ dist/
 tmp/
 .idea/
 /scratch/
+__pycache__/
+*.pyc
+
+# Local desktop packaging/build outputs
+MIRO Converter/build/
+MIRO Converter/*.dmg
+MIRO Converter/*.zip
+MIRO Converter/*.spec
+MIRO Converter/icon.iconset/
+import tkinter as tk.py

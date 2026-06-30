@@ -11,18 +11,30 @@ os.environ["PATH"] += os.pathsep + "/opt/homebrew/bin"
 
 # Mapping (Page Size, Orientation, Scale) -> Target Pixel Width
 PIXEL_WIDTHS = {
+    ("A3", "Landscape", "1:500"): 20900,
+    ("A3", "Landscape", "1:250"): 10450,
+    ("A3", "Landscape", "1:200"): 8360,
     ("A3", "Landscape", "1:100"): 4180,
     ("A3", "Landscape", "1:50") : 2090,
     ("A3", "Landscape", "1:25") : 1045,
     ("A3", "Landscape", "1:20") : 836,
+    ("A4", "Landscape", "1:500"): 14840,
+    ("A4", "Landscape", "1:250"): 7420,
+    ("A4", "Landscape", "1:200"): 5936,
     ("A4", "Landscape", "1:100"): 2968,
     ("A4", "Landscape", "1:50") : 1484,
     ("A4", "Landscape", "1:25") : 742,
     ("A4", "Landscape", "1:20") : 591,
+    ("A3", "Portrait",  "1:500"): 20900,
+    ("A3", "Portrait",  "1:250"): 10450,
+    ("A3", "Portrait",  "1:200"): 8360,
     ("A3", "Portrait",  "1:100"): 4180,
     ("A3", "Portrait",  "1:50") : 1484,
     ("A3", "Portrait",  "1:25") : 742,
     ("A3", "Portrait",  "1:20") : 594,
+    ("A4", "Portrait",  "1:500"): 10490,
+    ("A4", "Portrait",  "1:250"): 5245,
+    ("A4", "Portrait",  "1:200"): 4196,
     ("A4", "Portrait",  "1:100"): 2098,
     ("A4", "Portrait",  "1:50") : 1049,
     ("A4", "Portrait",  "1:25") : 525,
@@ -67,7 +79,7 @@ class PDFConverterApp:
 
         ttk.Label(self.frame, text="Drawing Scale:").pack(anchor='center')
         self.scale = tk.StringVar(value="1:100")
-        ttk.OptionMenu(self.frame, self.scale, "1:100", "1:100", "1:50", "1:20", "1:25").pack(pady=5)
+        ttk.OptionMenu(self.frame, self.scale, "1:100", "1:500", "1:250", "1:200", "1:100", "1:50", "1:20", "1:25").pack(pady=5)
 
         ttk.Label(self.frame, text="Orientation:").pack(anchor='center')
         self.orientation = tk.StringVar(value="Landscape")
