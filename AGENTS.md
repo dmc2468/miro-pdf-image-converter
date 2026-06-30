@@ -78,6 +78,35 @@ pnpm typecheck              # tsc --noEmit on client + server tsconfigs
 pnpm test                   # vitest run
 ```
 
+## Development workflow
+
+`pnpm dev` runs both the Express backend (on port 8080) and the Vite dev server (on port 5173) concurrently. Vite waits for the backend health check before starting, then proxies `/api` and `/health` to the backend. The proxy silently swallows ECONNREFUSED/ECONNRESET errors during `tsx watch` restarts so HMR stays clean.
+
+For a straight production-like build without Vite: `pnpm build && pnpm start` serves everything through Express on port 8080.
+
+## Key design decisions
+
+### Storage
+Both local dev and Fly deployment use the same S3 bucket (`studio-mcleod-miro-images`). The `ObjectStore` interface auto-selects `S3ObjectStore` when S3 env vars are present, falling back to `LocalObjectStore` otherwise. All images persist across restarts and are visible from any environment pointing at the same bucket.
+
+### Auth flow
+1. Admin creates a user via the Users panel
+2. A one-time magic link is generated and shared
+3. The user clicks the link, optionally sets a password (min 10 chars)
+4. The user logs in with email + password thereafter
+5. Any user can change their own password from the sidebar
+
+No self-registration. No password reset — admins generate a new magic link instead.
+
+### Image previews
+Previews silently show "Unavailable" when the backing object doesn't exist in S3 (e.g. old jobs from a previous deployment with a different storage backend). No error banners, no server crashes — the `LocalObjectStore` checks file existence before creating a read stream, and the frontend `.catch()` sets a failed state without propagating errors upward.
+
+### Jobs
+Each job row has a delete (X) button. Deletion removes the MongoDB record only — orphaned S3 objects are expected to be cleaned up by a bucket lifecycle policy.
+
+### CI/CD
+GitHub Actions on push to `main`: install → test → build → `flyctl deploy`. Auth uses email/password (not Fly API tokens) because the org token format wasn't accepted by `flyctl deploy`.
+
 ## File layout
 
 - `src/shared/` — types, scaling table (shared between client and server)

@@ -10,20 +10,23 @@ The original Python desktop application remains in `MIRO Converter/PDFtoJPEGscal
 
 # Features
 
-* React + Vite frontend
+* React + Vite frontend with HMR
 * Tailwind CSS user interface
 * Node.js + Express TypeScript backend
 * JWT authentication with securely hashed passwords
 * Role-based access control (Administrator and User)
 * Administrator-managed users
-* One-time magic links for login and password reset
-* MongoDB persistence for users and conversion history
-* S3-compatible private object storage
+* One-time magic links for login (no self-registration)
+* In-app password change
+* MongoDB Atlas persistence for users and conversion history
+* AWS S3 object storage for PDFs, JPEGs and ZIPs
 * Poppler (`pdftoppm`) PDF rendering
 * Sharp image processing
 * ZIP download generation
+* Click-to-expand image previews
+* Job history with delete
 * Fly.io deployment
-* Fully automated TypeScript build and test pipeline
+* Automated CI/CD (GitHub Actions → Fly.io)
 
 ---
 
@@ -64,7 +67,7 @@ The conversion pipeline is also covered by integration tests which verify that t
 # Local Development
 
 ## Prerequisites
-If your name is Duncan and you are super excited and want to get stuck in immediately follow [this link](README-DUNCAN-QUICKSTART.md), otherwise stay here and plot through this lot.
+If your name is Duncan and you want to get started quickly follow [this link](README-DUNCAN-QUICKSTART.md), otherwise stay here and read through.
 
 If you have previously only developed Python applications, install the following tools before attempting to run Studio McLeod.
 
@@ -158,23 +161,24 @@ cp .env.example .env
 
 Edit `.env`.
 
-For a simple local installation only the following values are required:
+For local development the following values must be set:
 
 ```text
 SEED_USER_EMAIL=<your email address>
-SEED_USER_PASSWORD=<choose a local password>
+SEED_USER_PASSWORD=<choose a strong password>
 SEED_USER_NAME=<your name>
+MONGODB_URI=<MongoDB Atlas connection string>
+S3_REGION=eu-west-1
+S3_BUCKET=studio-mcleod-miro-images
+S3_ACCESS_KEY_ID=<access key>
+S3_SECRET_ACCESS_KEY=<secret key>
 ```
 
-If no MongoDB connection is configured the application automatically falls back to an in-memory repository suitable for local development.
+*MongoDB Atlas* — the team uses a shared cluster (`studiomcleod.hbyof8t.mongodb.net`). Ask an admin for the connection string.
 
-If no S3 configuration is supplied uploaded files are stored privately under:
+*S3 credentials* — the team uses a shared S3 bucket (`studio-mcleod-miro-images`) in `eu-west-1`. Ask an admin for IAM access keys scoped to that bucket.
 
-```text
-storage/
-```
-
-These fallbacks exist purely for development and should never be used in production.
+If MongoDB is omitted the app falls back to an in-memory repository (data lost on restart). If S3 is omitted it falls back to local disk storage under `storage/`. Neither fallback is suitable for real use — they exist only for initial experimentation.
 
 ---
 
@@ -283,13 +287,16 @@ fly secrets set \
   S3_SECRET_ACCESS_KEY=<secret-key>
 ```
 
-Configure the GitHub repository secret that allows the `main` workflow to deploy to Fly.
+The CI/CD workflow authenticates with Fly.io using email and password.
+
+Configure these GitHub secrets:
 
 ```text
-FLY_API_TOKEN=<Fly.io deploy token>
+FLY_EMAIL=<Fly.io account email>
+FLY_PASSWORD=<Fly.io account password>
 ```
 
-The application runtime secrets still belong in Fly secrets:
+The application runtime secrets still belong in Fly secrets (not GitHub):
 
 ```text
 JWT_SECRET
@@ -376,7 +383,11 @@ If `MONGODB_URI` is omitted, Studio McLeod automatically uses an in-memory repos
 
 ### S3 configuration missing
 
-If no S3 credentials are supplied, uploaded files are stored privately under the local `storage/` directory.
+If no S3 credentials are supplied, uploaded files are stored privately under the local `storage/` directory. Switch to S3 for files that persist across restarts and are visible from any environment.
+
+### `Invalid URL` during upload
+
+Check that `S3_ENDPOINT` in your `.env` is not set to an empty string. This causes the AWS SDK to fail silently on upload. Either remove the line or set it to a real endpoint.
 
 ---
 
