@@ -8,7 +8,7 @@
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:client\"",
     "dev:client": "wait-on http-get://localhost:8080/health && vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server/index.ts",
-    "build": "pnpm build:release-notes && pnpm build:client && pnpm build:server",
+    "build": "pnpm build:client && pnpm build:server",
     "build:release-notes": "tsx scripts/build-release-notes.ts",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
