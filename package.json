@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.24.0",
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:client\"",
+    "fresh": "bash scripts/fresh-start.sh",
     "dev:client": "wait-on http-get://localhost:8080/health && vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server/index.ts",
     "build": "pnpm build:client && pnpm build:server",
