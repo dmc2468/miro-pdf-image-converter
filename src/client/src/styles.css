@@ -112,4 +112,80 @@
   .release-body h3:first-child {
     @apply mt-0;
   }
+
+  .session-body h1,
+  .session-body h2 {
+    @apply mb-2 mt-5 text-base font-semibold text-ink;
+  }
+
+  .session-body h1:first-child,
+  .session-body h2:first-child {
+    @apply mt-0;
+  }
+
+  .session-body h3 {
+    @apply mb-2 mt-4 text-sm font-semibold text-ink;
+  }
+
+  .session-body p {
+    @apply mb-2.5 leading-relaxed;
+  }
+
+  .session-body p:last-child {
+    @apply mb-0;
+  }
+
+  .session-body ul,
+  .session-body ol {
+    @apply mb-2.5 pl-5;
+  }
+
+  .session-body ul {
+    @apply list-disc;
+  }
+
+  .session-body ol {
+    @apply list-decimal;
+  }
+
+  .session-body li {
+    @apply leading-relaxed;
+  }
+
+  .session-body code {
+    @apply rounded bg-stone-100 px-1 py-0.5 font-mono text-xs text-ink;
+  }
+
+  .session-body strong {
+    @apply font-semibold text-ink;
+  }
+
+  .session-body a {
+    @apply text-blue hover:underline;
+  }
+
+  .session-body blockquote {
+    @apply mb-2.5 border-l-2 border-line pl-3 italic text-muted;
+  }
+
+  .session-body hr {
+    @apply my-5 border-line;
+  }
+
+  .session-body .table-scroll {
+    @apply mb-2.5 overflow-x-auto;
+  }
+
+  .session-body table {
+    @apply w-full min-w-[420px] text-left text-xs;
+  }
+
+  .session-body th,
+  .session-body td {
+    @apply border-b border-line px-2 py-1.5 align-top;
+  }
+
+  .session-body th {
+    @apply font-semibold text-ink;
+  }
 }

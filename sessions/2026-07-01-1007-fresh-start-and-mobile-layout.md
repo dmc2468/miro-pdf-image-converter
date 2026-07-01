@@ -25,8 +25,8 @@ then set issue #2's status to Ready.
 
 ## 2. Dev startup script
 
-> Can you create a script that automatically updates dependencies, starts the app and make sure that no other versions
-> of the app are running first. So it kills them off within the port range of this app?
+> Can you create a script that automatically updates dependencies, starts the app, and makes sure no other versions
+> of the app are already running — killing them off within the port range of this app?
 
 Created `scripts/fresh-start.sh` and added a `pnpm fresh` shortcut in `package.json`. The script, in order:
 
@@ -52,7 +52,7 @@ Committed `scripts/fresh-start.sh` and the `package.json` change and pushed to `
 
 ## 4. Pick up the next ready ticket
 
-> Thanks so much can you now pick up the Next ticket in the ready column?
+> Thanks so much, can you now pick up the next ticket in the ready column?
 
 Found the "Studio Mcleod Project Board" and its columns. The next ticket in **Ready** was **#2 — "Mobile layout is
 cramped across the app"**. Moved it to **In Progress** and read the client code.
@@ -76,7 +76,7 @@ Typecheck and production build both passed.
 
 ## 5. Whether to add a mobile framework
 
-> If you think adding a proper mobile framework would be better than go ahead it needs to be extensible and maintainable
+> If you think adding a proper mobile framework would be better, go ahead — it needs to be extensible and maintainable.
 
 Kept everything on **Tailwind CSS**, which the app already uses and which is wired to the design tokens in
 `tailwind.config.ts`. Adding a second UI or CSS framework would fight those tokens, add bundle weight and be harder to
@@ -98,7 +98,7 @@ in one place. Gave it a slightly translucent, blurred background so content read
 
 ## 7. Verify on a real mobile browser
 
-> You can always use my current browser, which is in mobile already
+> You can always use my current browser, which is already on mobile.
 
 Started the app with `pnpm fresh` in the background so Nick could check it on his phone. The startup script cleared the
 two stale instances on 8080/5173 first, which also confirmed the script from step 1 works. Served at:

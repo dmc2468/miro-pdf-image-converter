@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   Copy,
   Download,
   ExternalLink,
   FileArchive,
   FileText,
   GitCommit,
+  History,
   Image,
   KeyRound,
   Link,
@@ -19,15 +21,16 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobOutput, fetchReleaseNotes, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
-type Module = "miro-converter" | "admin-users" | "release-notes";
+type Module = "miro-converter" | "admin-users" | "release-notes" | "sessions";
 
 function currentModule(): Module {
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
   if (window.location.pathname.startsWith("/admin/release-notes")) return "release-notes";
+  if (window.location.pathname.startsWith("/admin/sessions")) return "sessions";
   return "miro-converter";
 }
 
@@ -56,6 +59,7 @@ export function App() {
       "miro-converter": "/miro-converter",
       "admin-users": "/admin/users",
       "release-notes": "/admin/release-notes",
+      "sessions": "/admin/sessions",
     };
     window.history.pushState(null, "", paths[module]);
     setActiveModule(module);
@@ -106,6 +110,8 @@ export function App() {
           <main className="min-w-0 flex-1 overflow-auto">
             {activeModule === "release-notes" ? (
               <ReleaseNotesPanel />
+            ) : activeModule === "sessions" ? (
+              <SessionsPanel />
             ) : activeModule === "admin-users" && session.user.role === "admin" ? (
               <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
             ) : (
@@ -150,12 +156,11 @@ const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
 ];
 
-// Human-facing title for each view. Used by the sticky top bar and the
-// in-page heading so there is one place to change a view's name.
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
   "admin-users": "User management",
   "release-notes": "Release notes",
+  "sessions": "Sessions",
 };
 
 function Sidebar({
@@ -289,6 +294,18 @@ function Sidebar({
             >
               <GitCommit size={18} />
               Release notes
+            </button>
+            <button
+              type="button"
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                activeModule === "sessions"
+                  ? "bg-ink text-white"
+                  : "text-muted hover:bg-stone-100 hover:text-ink"
+              }`}
+              onClick={() => onNavigate("sessions")}
+            >
+              <History size={18} />
+              Sessions
             </button>
           </>
         ) : null}
@@ -925,6 +942,84 @@ function ReleaseNotesPanel() {
               ) : null}
             </li>
           ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function SessionsPanel() {
+  const [sessions, setSessions] = useState<import("./api").SessionEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  function load() {
+    setLoading(true);
+    setError(null);
+    void fetchSessions()
+      .then((result) => {
+        setSessions(result.sessions);
+        setExpandedId((current) => current ?? result.sessions[0]?.id ?? null);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load sessions."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-ink">Sessions</h2>
+          <p className="mt-0.5 text-sm text-muted">Notes from working sessions on this project.</p>
+        </div>
+        <button className="icon-only" type="button" title="Refresh" onClick={load}>
+          <RefreshCw size={17} />
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
+          <RefreshCw className="animate-spin" size={16} />
+          Loading...
+        </p>
+      ) : error ? (
+        <p className="py-20 text-center text-sm text-red-600">{error}</p>
+      ) : sessions.length === 0 ? (
+        <p className="py-20 text-center text-sm text-muted">No sessions yet.</p>
+      ) : (
+        <ol className="space-y-4">
+          {sessions.map((entry) => {
+            const expanded = expandedId === entry.id;
+            return (
+              <li key={entry.id} className="rounded-xl border border-line bg-white p-5">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                  onClick={() => setExpandedId(expanded ? null : entry.id)}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-ink">{entry.title}</span>
+                    {entry.date ? <span className="text-xs text-muted">{formatDate(entry.date)}</span> : null}
+                  </span>
+                  <ChevronDown
+                    className={`shrink-0 text-muted transition ${expanded ? "rotate-180" : ""}`}
+                    size={18}
+                  />
+                </button>
+                {expanded ? (
+                  <div
+                    className="session-body mt-3 max-w-full overflow-x-hidden border-t border-line pt-3 text-sm text-muted"
+                    dangerouslySetInnerHTML={{ __html: entry.trustedBodyHtml }}
+                  />
+                ) : null}
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>

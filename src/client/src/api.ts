@@ -165,6 +165,17 @@ export function fetchReleaseNotes(): Promise<{ entries: ReleaseEntry[] }> {
   return apiFetch<{ entries: ReleaseEntry[] }>("/api/release-notes");
 }
 
+export interface SessionEntry {
+  id: string;
+  title: string;
+  date: string;
+  trustedBodyHtml: string;
+}
+
+export function fetchSessions(): Promise<{ sessions: SessionEntry[] }> {
+  return apiFetch<{ sessions: SessionEntry[] }>("/api/sessions");
+}
+
 export function fetchVersion(): Promise<{ version: string; gitSha: string; generatedAt: string }> {
   return apiFetch<{ version: string; gitSha: string; generatedAt: string }>("/api/version");
 }

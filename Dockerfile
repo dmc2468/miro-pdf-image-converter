@@ -27,6 +27,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
+COPY sessions ./sessions
 
 EXPOSE 8080
 

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { getShortGitHead } from "../src/server/git.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,13 +59,7 @@ async function readGitLog(): Promise<{ entries: ReleaseEntry[]; head: string }> 
           body: rest.join(FS).trim(),
         };
       });
-    let head = "";
-    try {
-      const r = await execFileAsync("git", ["-C", process.cwd(), "rev-parse", "--short", "HEAD"]);
-      head = r.stdout.trim();
-    } catch {
-      // Ignore — head stays empty.
-    }
+    const head = await getShortGitHead();
     return { entries, head };
   } catch (err) {
     process.stderr.write(`build-release-notes: git log failed (${err instanceof Error ? err.message : String(err)}). Writing empty entries.\n`);

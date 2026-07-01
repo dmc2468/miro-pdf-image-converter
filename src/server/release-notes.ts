@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
-import { config } from "./config.js";
+import { getShortGitHead } from "./git.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,13 +57,7 @@ async function loadFromGitLog(): Promise<BuildInfo> {
       };
     });
 
-  let head = "";
-  try {
-    const r = await execFileAsync("git", ["-C", process.cwd(), "rev-parse", "--short", "HEAD"]);
-    head = r.stdout.trim();
-  } catch {
-    // Ignore
-  }
+  const head = await getShortGitHead();
 
   return {
     version: "dev",

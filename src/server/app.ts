@@ -16,6 +16,7 @@ import type { ConversionJob } from "../shared/types.js";
 import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
+import { loadSessions } from "./sessions.js";
 
 export function createApp(repositories: Repositories, objectStore: ObjectStore): express.Express {
   const app = express();
@@ -410,6 +411,15 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     try {
       const info = await loadBuildInfo();
       response.json({ entries: info.entries });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/sessions", async (_request, response, next) => {
+    try {
+      const sessions = await loadSessions();
+      response.json({ sessions });
     } catch (error) {
       next(error);
     }
