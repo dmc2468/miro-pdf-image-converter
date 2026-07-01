@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobZip, fetchReleaseNotes, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobOutput, fetchReleaseNotes, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
@@ -475,7 +475,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
       const result = await createJob(session.token, formData);
       setJobs((current) => [result.job, ...current.filter((job) => job._id !== result.job._id)]);
       setSelectedFiles([]);
-      await downloadJobZip(session.token, result.job._id);
+      await downloadJobOutput(session.token, result.job._id);
     } catch (error) {
       if (isUnauthorised(error)) {
         onSessionExpired();
@@ -1106,19 +1106,19 @@ function JobRow({ job, token, onDelete, onError, onSessionExpired }: { job: Conv
         </div>
       ) : null}
       {job.errorMessage ? <p className="mt-3 text-sm text-red-700">{job.errorMessage}</p> : null}
-      {job.status === "completed" && job.zipFile ? (
+      {job.status === "completed" && job.generatedImages.length ? (
         <button
           className="secondary-button mt-3 inline-flex"
           type="button"
           onClick={() => {
-            void downloadJobZip(token, job._id).catch((error: unknown) => {
+            void downloadJobOutput(token, job._id).catch((error: unknown) => {
               onError(error instanceof Error ? error.message : "Download failed.");
               if (isUnauthorised(error)) onSessionExpired();
             });
           }}
         >
           <Download size={16} />
-          Download ZIP
+          Download {job.generatedImages.length === 1 ? "JPEG" : "ZIP"}
         </button>
       ) : null}
     </div>

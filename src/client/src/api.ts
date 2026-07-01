@@ -59,7 +59,17 @@ export function createJob(token: string, formData: FormData): Promise<{ job: Con
   });
 }
 
-export async function downloadJobZip(token: string, jobId: string): Promise<void> {
+function fileNameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+  const quotedMatch = /filename="([^"]+)"/i.exec(header);
+  if (quotedMatch?.[1]) return quotedMatch[1];
+  const plainMatch = /filename=([^;]+)/i.exec(header);
+  return plainMatch?.[1]?.trim() ?? null;
+}
+
+export async function downloadJobOutput(token: string, jobId: string): Promise<void> {
   const response = await fetch(`/api/jobs/${jobId}/download`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -75,7 +85,7 @@ export async function downloadJobZip(token: string, jobId: string): Promise<void
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "miro_converted_jpegs.zip";
+  anchor.download = fileNameFromContentDisposition(response.headers.get("Content-Disposition")) ?? "miro_converted_output";
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
