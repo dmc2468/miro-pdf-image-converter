@@ -53,27 +53,27 @@ Login is rate-limited (5 attempts per 60s per IP).
 - **Conventional commits**: `<type>(<scope>): <description>`
 - **Paragraph-style body** — root cause + supporting fixes
 - **No literal `\n`** in commit messages
-- **`main` is production** — every push to `main` auto-deploys to Fly. Never push to `main` directly. Push to `pre-main` first and promote only when CI is green.
+- **`main` is production** — every push to `main` auto-deploys to Fly. Never push to `main` directly. Push to `pre-main`, rehearse the pipeline there on demand, and promote only when you are confident.
 
 ### Promotion flow: `pre-main` → `main`
 
 `main` is the production branch: a push to it deploys to Fly and updates the public release notes. So `main` must only ever hold commits that produce a working production app. The discipline:
 
 1. Commit locally (on a branch tracking `main`).
-2. Push to `pre-main`. CI runs the **verify** job only: tests and typecheck. A red `pre-main` is fine and expected while iterating — nothing is built or deployed from it.
-3. When verify is green and you are confident the change works, promote it to `main` (fast-forward push). **Only `main` builds the deployment**: it runs verify, then the **deploy** job builds the production image, smoke-tests `/health`, and runs `flyctl deploy`.
-4. `main` stays clean — its history is the release notes, so it should never carry experimental or broken commits.
+2. Push to `pre-main`. Nothing runs automatically — `pre-main` is a quiet staging branch, so you are never forced through a verify stage you did not ask for.
+3. When you want to check the change, run the pipeline manually against `pre-main`: GitHub → Actions → CI/CD → "Run workflow" → pick `pre-main`, or `gh workflow run CI/CD --ref pre-main`. This runs the **entire pipeline** — tests, typecheck, a production `docker build`, and a `/health` smoke test — but **does not deploy**. It proves the change would ship cleanly without touching production.
+4. When the manual run is green and you are confident, promote to `main` (fast-forward push). Only a push to `main` deploys: it runs the same pipeline, then `flyctl deploy`.
 
-Only promote to `main` when you are confident the change produces a working production application. When unsure, stay on `pre-main`.
+`main` stays clean — its history is the release notes, so it should never carry experimental or broken commits. When unsure, keep rehearsing on `pre-main`.
 
-**Changes that alter behaviour should arrive with tests.** Add unit tests (and integration tests where a pipeline is involved) that prove the new behaviour, so the `verify` job actually exercises the change rather than just compiling it. That is how `pre-main` earns confidence before `main` deploys.
+**Changes that alter behaviour should arrive with tests.** Add unit tests (and integration tests where a pipeline is involved) that prove the new behaviour, so the pipeline actually exercises the change rather than just compiling it. That is how a `pre-main` rehearsal earns confidence before `main` deploys.
 
 ### When asked to "commit" or "commit and push"
 
 Treat the commit message as a user-facing changelog entry that Duncan (a non-developer) will read in the release-notes panel:
 
 - Write the body as polished release notes using the supported markdown below — headings to group the change, bullets for the specifics, inline code for identifiers.
-- On **"commit and push"**, push to `pre-main` (never straight to `main`), report the CI verify result, and ask before promoting to `main`.
+- On **"commit and push"**, push to `pre-main` (never straight to `main`). Offer to run the pipeline manually against `pre-main` to rehearse it (that run never deploys), and ask before promoting to `main`.
 
 ### Commit messages are the app's release notes
 
@@ -142,7 +142,7 @@ Previews silently show "Unavailable" when the backing object doesn't exist in S3
 Each job row has a delete (X) button. Deletion removes the MongoDB record only — orphaned S3 objects are expected to be cleaned up by a bucket lifecycle policy.
 
 ### CI/CD
-GitHub Actions (`.github/workflows/main.yml`) runs on push to `main` and `pre-main`. The **verify** job (both branches) runs tests and typecheck only. The **deploy** job runs only on `main`, after verify passes: `build:release-notes` → production `docker build` + `/health` smoke test → `flyctl deploy --remote-only`. Only `main` builds and deploys — `pre-main` is purely for running the tests. Auth uses email/password (not Fly API tokens) because the org token format wasn't accepted by `flyctl deploy`.
+GitHub Actions (`.github/workflows/main.yml`) runs on push to `main` and on manual `workflow_dispatch`. Two jobs: **verify** (tests + typecheck) and **pipeline** (`build:release-notes` → production `docker build` → `/health` smoke test → `flyctl deploy`). The two deploy steps are guarded by `github.event_name == 'push' && github.ref == 'refs/heads/main'`, so a manual run — for example dispatched against `pre-main` — rehearses the whole pipeline (build + smoke test) without ever deploying. Only an actual push to `main` deploys. Auth uses email/password (not Fly API tokens) because the org token format wasn't accepted by `flyctl deploy`.
 
 ## File layout
 

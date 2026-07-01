@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - pre-main
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -36,10 +36,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-  deploy:
-    name: Build and deploy to Fly (production only)
+  pipeline:
+    name: Build image and smoke test (deploys only on push to main)
     needs: verify
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -84,9 +83,11 @@ jobs:
           done
 
       - name: Set up flyctl
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           flyctl auth login --email "${{ secrets.FLY_EMAIL }}" --password "${{ secrets.FLY_PASSWORD }}"
           flyctl deploy --remote-only
