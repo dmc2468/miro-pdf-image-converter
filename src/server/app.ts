@@ -331,8 +331,22 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       const user = (request as AuthenticatedRequest).user;
       const jobId = String(request.params.jobId);
       const job = await findJobForRequestUser(repositories, jobId, user);
-      if (!job?.zipFile) {
-        throw new HttpError(404, "The ZIP file is not available.");
+      if (!job) {
+        throw new HttpError(404, "Job not found.");
+      }
+
+      if (job.generatedImages.length === 1) {
+        const image = job.generatedImages[0];
+        const stream = await objectStore.getReadStream(image.key);
+        const fileName = path.basename(image.originalFileName ?? image.key);
+        response.setHeader("Content-Type", image.contentType);
+        response.setHeader("Content-Disposition", `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        stream.pipe(response);
+        return;
+      }
+
+      if (!job.zipFile) {
+        throw new HttpError(404, "The download file is not available.");
       }
 
       const stream = await objectStore.getReadStream(job.zipFile.key);
