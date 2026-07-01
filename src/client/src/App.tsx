@@ -10,6 +10,7 @@ import {
   KeyRound,
   Link,
   LogOut,
+  Menu,
   RefreshCw,
   Shield,
   UploadCloud,
@@ -42,6 +43,7 @@ export function App() {
     }
   });
   const [activeModule, setActiveModule] = useState<Module>(currentModule);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const onPopState = () => setActiveModule(currentModule());
@@ -57,6 +59,7 @@ export function App() {
     };
     window.history.pushState(null, "", paths[module]);
     setActiveModule(module);
+    setMobileNavOpen(false);
   }
 
   function storeSession(nextSession: UserSession) {
@@ -79,18 +82,28 @@ export function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-paper text-ink">
+    <div className="flex min-h-screen flex-col bg-paper text-ink lg:flex-row">
       {session ? (
         <>
+          <MobileTopBar title={moduleTitles[activeModule]} onOpenNav={() => setMobileNavOpen(true)} />
+          {mobileNavOpen ? (
+            <div
+              className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+              aria-hidden="true"
+              onClick={() => setMobileNavOpen(false)}
+            />
+          ) : null}
           <Sidebar
             activeModule={activeModule}
             role={session.user.role}
             email={session.user.email}
             token={session.token}
+            open={mobileNavOpen}
             onNavigate={navigateTo}
+            onCloseNav={() => setMobileNavOpen(false)}
             onLogout={logout}
           />
-          <main className="flex-1 overflow-auto">
+          <main className="min-w-0 flex-1 overflow-auto">
             {activeModule === "release-notes" ? (
               <ReleaseNotesPanel />
             ) : activeModule === "admin-users" && session.user.role === "admin" ? (
@@ -109,6 +122,24 @@ export function App() {
   );
 }
 
+function MobileTopBar({ title, onOpenNav }: { title: string; onOpenNav: () => void }) {
+  return (
+    <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
+      <button
+        type="button"
+        title="Open menu"
+        aria-label="Open menu"
+        className="icon-only h-10 w-10 shrink-0"
+        onClick={onOpenNav}
+      >
+        <Menu size={20} />
+      </button>
+      <img src="/logo.jpg" alt="Studio McLeod" className="h-7 w-auto shrink-0" />
+      <p className="truncate text-sm font-semibold text-ink">{title}</p>
+    </header>
+  );
+}
+
 type ModuleItem = {
   id: Module;
   label: string;
@@ -119,19 +150,31 @@ const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
 ];
 
+// Human-facing title for each view. Used by the sticky top bar and the
+// in-page heading so there is one place to change a view's name.
+const moduleTitles: Record<Module, string> = {
+  "miro-converter": "Miro converter",
+  "admin-users": "User management",
+  "release-notes": "Release notes",
+};
+
 function Sidebar({
   activeModule,
   role,
   email,
   token,
+  open,
   onNavigate,
+  onCloseNav,
   onLogout,
 }: {
   activeModule: Module;
   role: UserRole;
   email: string;
   token: string;
+  open: boolean;
   onNavigate: (module: Module) => void;
+  onCloseNav: () => void;
   onLogout: () => void;
 }) {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -177,13 +220,26 @@ function Sidebar({
   }
 
   return (
-    <aside className="flex w-64 flex-col border-r border-line bg-white">
+    <aside
+      className={`fixed inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] flex-col overflow-y-auto border-r border-line bg-white transition-transform duration-200 lg:static lg:z-auto lg:max-w-none lg:translate-x-0 ${
+        open ? "translate-x-0 shadow-xl" : "-translate-x-full"
+      } lg:shadow-none`}
+    >
       <div className="flex items-center gap-3 border-b border-line px-5 py-5">
         <img src="/logo.jpg" alt="Studio McLeod" className="h-8 w-auto" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-ink">Studio McLeod</p>
           <p className="truncate text-xs text-muted">Private tools</p>
         </div>
+        <button
+          type="button"
+          title="Close menu"
+          aria-label="Close menu"
+          className="icon-only ml-auto shrink-0 lg:hidden"
+          onClick={onCloseNav}
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
@@ -489,7 +545,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-ink">Miro converter</h2>
         <p className="text-sm text-muted">Convert architectural PDF drawings into correctly scaled JPEG images for importing into Miro.</p>
@@ -627,7 +683,7 @@ function AdminUsersPanel({ token, currentUserId, onSessionExpired }: { token: st
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-ink">User management</h2>
         <p className="text-sm text-muted">Create and manage Studio McLeod team members.</p>
@@ -809,17 +865,17 @@ function ReleaseNotesPanel() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold text-ink">Release notes</h2>
           <p className="mt-0.5 text-sm text-muted">
-            <a href={REPO_URL} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 text-muted hover:text-ink">
-              <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor">
+            <a href={REPO_URL} target="_blank" rel="noopener" className="inline-flex max-w-full items-center gap-1.5 text-muted hover:text-ink">
+              <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor" className="shrink-0">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
               </svg>
-              {REPO_URL.replace("https://", "")}
-              <ExternalLink size={12} />
+              <span className="truncate">{REPO_URL.replace("https://", "")}</span>
+              <ExternalLink size={12} className="shrink-0" />
             </a>
           </p>
         </div>
