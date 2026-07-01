@@ -8,3 +8,8 @@ becomes the one version of the truth, rather than code and a comment that can dr
 
 Prose explanation of *why* something was built a certain way belongs in commit messages or `sessions/` notes, not
 in the code.
+
+## Git workflow
+
+Trunk-based: commit straight to `main`, no merge commits. If local `main` and `origin/main` have diverged (someone
+else pushed in the meantime), rebase onto `origin/main` before pushing — never `git merge origin/main`.

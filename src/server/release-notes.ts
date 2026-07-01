@@ -37,7 +37,7 @@ async function loadFromGitLog(): Promise<BuildInfo> {
     "git",
     [
       "-C", process.cwd(),
-      "log", "-50",
+      "log", "-50", "--no-merges",
       `--pretty=format:%H${FS}%an${FS}%aI${FS}%s${FS}%b${RS}`,
     ],
     { maxBuffer: 4 * 1024 * 1024 },
