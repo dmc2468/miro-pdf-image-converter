@@ -21,22 +21,22 @@ export interface MeetingRoomRepository {
 const seedMeetingRooms: Omit<MeetingRoomRecord, "createdAt" | "updatedAt">[] = [
   {
     id: "call-hangout-1",
-    name: "Call Hangout 1",
-    teamspeakChannelName: "Call Hangout 1",
+    name: "Hangout room 1",
+    teamspeakChannelName: "Hangout room 1",
     meetUrl: "",
     participants: [],
   },
   {
     id: "call-hangout-2",
-    name: "Call Hangout 2",
-    teamspeakChannelName: "Call Hangout 2",
+    name: "Hangout room 2",
+    teamspeakChannelName: "Hangout room 2",
     meetUrl: "",
     participants: [],
   },
   {
     id: "call-hangout-3",
-    name: "Call Hangout 3",
-    teamspeakChannelName: "Call Hangout 3",
+    name: "Hangout room 3",
+    teamspeakChannelName: "Hangout room 3",
     meetUrl: "",
     participants: [],
   },
@@ -67,10 +67,16 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
       await this.collection.updateOne(
         { id: room.id },
         {
-          $setOnInsert: {
-            ...room,
-            createdAt: now,
+          $set: {
+            name: room.name,
+            teamspeakChannelName: room.teamspeakChannelName,
             updatedAt: now,
+          },
+          $setOnInsert: {
+            id: room.id,
+            meetUrl: room.meetUrl,
+            participants: room.participants,
+            createdAt: now,
           },
         },
         { upsert: true },
@@ -142,6 +148,10 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
           createdAt: now,
           updatedAt: now,
         });
+      } else {
+        existing.name = room.name;
+        existing.teamspeakChannelName = room.teamspeakChannelName;
+        existing.updatedAt = now;
       }
     }
   }

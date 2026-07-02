@@ -14,7 +14,7 @@ import { serializeAdminUser, type UserRecord } from "./repositories/users.js";
 import type { ObjectStore } from "./storage/objectStore.js";
 import { ConversionService } from "./services/conversion.js";
 import { isDrawingScale, isOrientation, isPaperSize } from "../shared/scaling.js";
-import type { ConversionJob, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, VoiceCommandInput, VoiceCommandModifier, VoiceCommandRunResult } from "../shared/types.js";
+import type { ConversionJob, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, TeamSpeakStatusInput, VoiceCommandInput, VoiceCommandModifier, VoiceCommandRunResult } from "../shared/types.js";
 import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
@@ -455,6 +455,31 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.post("/api/meeting-rooms/teamspeak-status", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const storedUser = await repositories.users.findById(user.id);
+      const input = parseTeamSpeakStatusInput(request.body);
+      const activeRoomId = meetingRoomIdForTeamSpeakChannelName(input.channelName);
+      const roomIds: MeetingRoomId[] = ["call-hangout-1", "call-hangout-2", "call-hangout-3"];
+      for (const roomId of roomIds.filter((item) => item !== activeRoomId)) {
+        await repositories.meetingRooms.leave(roomId, user.id);
+      }
+      if (activeRoomId) {
+        await repositories.meetingRooms.join(activeRoomId, {
+          userId: user.id,
+          email: user.email,
+          name: storedUser?.name,
+          joinedAt: new Date().toISOString(),
+        });
+      }
+      const rooms = await repositories.meetingRooms.list();
+      response.json({ activeRoomId, rooms: rooms.map(serializeMeetingRoom) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.put("/api/meeting-rooms/:roomId/miro-board", requireAuth, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;
@@ -680,6 +705,23 @@ function parseMeetingRoomBoardInput(value: unknown): MeetingRoomBoardInput {
     throw new HttpError(400, "Miro board URL must be a miro.com link.");
   }
   return { url };
+}
+
+function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "TeamSpeak status must be an object.");
+  }
+  return {
+    channelName: optionalString(value.channelName),
+  };
+}
+
+function meetingRoomIdForTeamSpeakChannelName(channelName: string | undefined): MeetingRoomId | undefined {
+  const normalised = channelName?.trim().toLowerCase();
+  if (normalised === "hangout room 1") return "call-hangout-1";
+  if (normalised === "hangout room 2") return "call-hangout-2";
+  if (normalised === "hangout room 3") return "call-hangout-3";
+  return undefined;
 }
 
 function parseVoiceCommandInput(value: unknown): VoiceCommandInput {

@@ -1,4 +1,4 @@
-import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
+import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, TeamSpeakStatusInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -243,6 +243,14 @@ export function leaveMeetingRoom(token: string, roomId: MeetingRoomId): Promise<
   return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}/leave`, {
     method: "POST",
     token,
+  });
+}
+
+export function updateTeamSpeakStatus(token: string, input: TeamSpeakStatusInput): Promise<{ activeRoomId?: MeetingRoomId; rooms: MeetingRoom[] }> {
+  return apiFetch<{ activeRoomId?: MeetingRoomId; rooms: MeetingRoom[] }>("/api/meeting-rooms/teamspeak-status", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
   });
 }
 

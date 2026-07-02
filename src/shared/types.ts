@@ -132,6 +132,10 @@ export interface MeetingRoomBoardInput {
   url: string;
 }
 
+export interface TeamSpeakStatusInput {
+  channelName?: string;
+}
+
 export interface ApiError {
   error: string;
 }
