@@ -13,21 +13,31 @@ import {
   Link,
   LogOut,
   Menu,
+  Mic,
+  MonitorUp,
+  Play,
   RefreshCw,
+  Save,
+  Search,
   Shield,
+  Square,
+  Trash2,
   UploadCloud,
   Users,
+  Video,
   X,
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
-import type { AdminUser, ConversionJob, DrawingScale, Orientation, PaperSize, UserRole, UserSession } from "../../shared/types";
-import { ApiRequestError, changePassword, createJob, createMagicLink, createUser, deleteJob, deleteUser, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, jobImageObjectUrl, listJobs, listUsers, login, loginWithMagicLink, updateUser } from "./api";
+import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
+import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateMeetingRoom, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 
-type Module = "miro-converter" | "admin-users" | "release-notes" | "sessions";
+type Module = "miro-converter" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
 function currentModule(): Module {
+  if (window.location.pathname.startsWith("/meeting-rooms")) return "meeting-rooms";
+  if (window.location.pathname.startsWith("/voice-commands")) return "voice-commands";
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
   if (window.location.pathname.startsWith("/admin/release-notes")) return "release-notes";
   if (window.location.pathname.startsWith("/admin/sessions")) return "sessions";
@@ -57,6 +67,8 @@ export function App() {
   function navigateTo(module: Module) {
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
+      "meeting-rooms": "/meeting-rooms",
+      "voice-commands": "/voice-commands",
       "admin-users": "/admin/users",
       "release-notes": "/admin/release-notes",
       "sessions": "/admin/sessions",
@@ -83,6 +95,14 @@ export function App() {
 
   if (window.location.pathname.startsWith("/magic-link")) {
     return <MagicLinkPage onSession={storeSession} />;
+  }
+
+  if (window.location.pathname.startsWith("/miro-board-share")) {
+    return session ? (
+      <MiroBoardSharePage session={session} onSessionExpired={expireSession} />
+    ) : (
+      <MiroBoardShareAuth onSession={storeSession} />
+    );
   }
 
   return (
@@ -114,6 +134,10 @@ export function App() {
               <SessionsPanel />
             ) : activeModule === "admin-users" && session.user.role === "admin" ? (
               <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
+            ) : activeModule === "meeting-rooms" ? (
+              <MeetingRoomsModule session={session} onSessionExpired={expireSession} />
+            ) : activeModule === "voice-commands" ? (
+              <VoiceCommandsModule session={session} onSessionExpired={expireSession} />
             ) : (
               <MiroConverterModule session={session} onSessionExpired={expireSession} />
             )}
@@ -154,10 +178,14 @@ type ModuleItem = {
 
 const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
+  { id: "meeting-rooms", label: "Meeting rooms", icon: Video },
+  { id: "voice-commands", label: "Vectorworks voice commands", icon: Mic },
 ];
 
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
+  "meeting-rooms": "Meeting rooms",
+  "voice-commands": "Vectorworks voice commands",
   "admin-users": "User management",
   "release-notes": "Release notes",
   "sessions": "Sessions",
@@ -585,6 +613,1094 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
         />
         <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onDelete={(id) => deleteJob(session.token, id).then(() => refreshJobs())} onError={setMessage} onSessionExpired={onSessionExpired} />
       </section>
+    </div>
+  );
+}
+
+function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
+  const [rooms, setRooms] = useState<MeetingRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [miroDrafts, setMiroDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
+  const [meetDrafts, setMeetDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
+  const [busyRoomId, setBusyRoomId] = useState<MeetingRoomId | null>(null);
+  const isAdmin = session.user.role === "admin";
+
+  useEffect(() => {
+    void refreshRooms();
+    const interval = window.setInterval(() => void refreshRooms(false), 12_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  async function refreshRooms(showLoading = true) {
+    if (showLoading) setLoading(true);
+    try {
+      const result = await listMeetingRooms(session.token);
+      setRooms(result.rooms);
+      setMeetDrafts((current) => {
+        const next = { ...current };
+        result.rooms.forEach((room) => {
+          if (next[room.id] === undefined) next[room.id] = room.meetUrl;
+        });
+        return next;
+      });
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not load meeting rooms.");
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }
+
+  function replaceRoom(room: MeetingRoom) {
+    setRooms((current) => current.map((item) => (item.id === room.id ? room : item)));
+  }
+
+  async function joinRoom(room: MeetingRoom) {
+    setBusyRoomId(room.id);
+    setMessage(null);
+    const meetWindow = room.meetUrl ? window.open(room.meetUrl, "_blank", "noopener,noreferrer") : null;
+    try {
+      const result = await joinMeetingRoom(session.token, room.id);
+      replaceRoom(result.room);
+      if (!room.meetUrl) setMessage("This room does not have a Meet link yet.");
+      if (room.meetUrl && !meetWindow) setMessage("Your browser blocked the Meet popup. Open it with the Meet button.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not join meeting room.");
+    } finally {
+      setBusyRoomId(null);
+    }
+  }
+
+  async function leaveRoom(room: MeetingRoom) {
+    setBusyRoomId(room.id);
+    setMessage(null);
+    try {
+      const result = await leaveMeetingRoom(session.token, room.id);
+      replaceRoom(result.room);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not leave meeting room.");
+    } finally {
+      setBusyRoomId(null);
+    }
+  }
+
+  async function saveMeetUrl(room: MeetingRoom) {
+    setBusyRoomId(room.id);
+    setMessage(null);
+    try {
+      const result = await updateMeetingRoom(session.token, room.id, { meetUrl: meetDrafts[room.id] ?? "" });
+      replaceRoom(result.room);
+      setMessage("Meet link saved.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not save Meet link.");
+    } finally {
+      setBusyRoomId(null);
+    }
+  }
+
+  async function shareBoard(room: MeetingRoom) {
+    const url = miroDrafts[room.id]?.trim();
+    if (!url) {
+      setMessage("Paste a Miro board URL first.");
+      return;
+    }
+    setBusyRoomId(room.id);
+    setMessage(null);
+    try {
+      const result = await shareMeetingRoomBoard(session.token, room.id, { url });
+      replaceRoom(result.room);
+      setMiroDrafts((current) => ({ ...current, [room.id]: "" }));
+      setMessage("Miro board shared with the room.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not share Miro board.");
+    } finally {
+      setBusyRoomId(null);
+    }
+  }
+
+  async function clearBoard(room: MeetingRoom) {
+    setBusyRoomId(room.id);
+    setMessage(null);
+    try {
+      const result = await clearMeetingRoomBoard(session.token, room.id);
+      replaceRoom(result.room);
+      setMessage("Miro board cleared.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not clear Miro board.");
+    } finally {
+      setBusyRoomId(null);
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-7xl px-6 py-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Meeting rooms</h2>
+          <p className="text-sm text-muted">Join TeamSpeak hangouts, launch Meet, and share the active Miro board for the room.</p>
+        </div>
+        <button className="icon-only" type="button" title="Refresh rooms" onClick={() => void refreshRooms()}>
+          <RefreshCw size={17} />
+        </button>
+      </div>
+
+      {message ? <div className="mb-5"><Alert message={message} onDismiss={() => setMessage(null)} /></div> : null}
+
+      {loading ? (
+        <p className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
+          <RefreshCw className="animate-spin" size={16} />
+          Loading...
+        </p>
+      ) : (
+        <section className="grid gap-5 xl:grid-cols-3">
+          {rooms.map((room) => (
+            <MeetingRoomCard
+              busy={busyRoomId === room.id}
+              isAdmin={isAdmin}
+              meetDraft={meetDrafts[room.id] ?? ""}
+              miroDraft={miroDrafts[room.id] ?? ""}
+              room={room}
+              session={session}
+              key={room.id}
+              onClearBoard={() => void clearBoard(room)}
+              onJoin={() => void joinRoom(room)}
+              onLeave={() => void leaveRoom(room)}
+              onMeetDraft={(value) => setMeetDrafts((current) => ({ ...current, [room.id]: value }))}
+              onMiroDraft={(value) => setMiroDrafts((current) => ({ ...current, [room.id]: value }))}
+              onSaveMeetUrl={() => void saveMeetUrl(room)}
+              onShareBoard={() => void shareBoard(room)}
+            />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function MeetingRoomCard({
+  busy,
+  isAdmin,
+  meetDraft,
+  miroDraft,
+  room,
+  session,
+  onClearBoard,
+  onJoin,
+  onLeave,
+  onMeetDraft,
+  onMiroDraft,
+  onSaveMeetUrl,
+  onShareBoard,
+}: {
+  busy: boolean;
+  isAdmin: boolean;
+  meetDraft: string;
+  miroDraft: string;
+  room: MeetingRoom;
+  session: UserSession;
+  onClearBoard: () => void;
+  onJoin: () => void;
+  onLeave: () => void;
+  onMeetDraft: (value: string) => void;
+  onMiroDraft: (value: string) => void;
+  onSaveMeetUrl: () => void;
+  onShareBoard: () => void;
+}) {
+  const joined = room.participants.some((participant) => participant.userId === session.user.id);
+
+  return (
+    <article className="rounded-xl border border-line bg-white">
+      <div className="border-b border-line px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-ink">{room.name}</h3>
+            <p className="mt-1 text-xs text-muted">{room.teamspeakChannelName}</p>
+          </div>
+          <span className="status status-processing">{room.participants.length}</span>
+        </div>
+      </div>
+
+      <div className="space-y-5 p-5">
+        <div className="flex flex-wrap gap-2">
+          <button className="primary-button" type="button" disabled={busy} onClick={onJoin}>
+            {busy ? <RefreshCw className="animate-spin" size={18} /> : <Video size={18} />}
+            Join
+          </button>
+          {room.meetUrl ? (
+            <a className="secondary-button" href={room.meetUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={16} />
+              Meet
+            </a>
+          ) : null}
+          {joined ? (
+            <button className="secondary-button" type="button" disabled={busy} onClick={onLeave}>
+              Leave
+            </button>
+          ) : null}
+        </div>
+
+        {isAdmin ? (
+          <div className="rounded-lg border border-line bg-stone-50 p-3">
+            <label className="field-label">
+              Meet link
+              <input className="field-input" value={meetDraft} onChange={(event) => onMeetDraft(event.target.value)} />
+            </label>
+            <button className="secondary-button mt-3" type="button" disabled={busy} onClick={onSaveMeetUrl}>
+              <Save size={16} />
+              Save Meet
+            </button>
+          </div>
+        ) : null}
+
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <MonitorUp className="text-blue" size={18} />
+            <h4 className="text-sm font-semibold text-ink">Miro board</h4>
+          </div>
+          {room.miroBoard ? (
+            <div className="rounded-lg border border-blue/20 bg-blue/5 p-3">
+              <p className="break-all text-sm font-medium text-ink">{room.miroBoard.url}</p>
+              <p className="mt-2 text-xs text-muted">
+                Shared by {room.miroBoard.sharedByName ?? room.miroBoard.sharedByEmail} · {new Date(room.miroBoard.sharedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a className="secondary-button" href={room.miroBoard.url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink size={16} />
+                  Open Miro
+                </a>
+                <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(room.miroBoard?.url ?? "")}>
+                  <Copy size={16} />
+                  Copy
+                </button>
+                <button className="secondary-button" type="button" disabled={busy} onClick={onClearBoard}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-line bg-stone-50 px-3 py-4 text-sm text-muted">No board shared yet.</p>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <input className="field-input mt-0" value={miroDraft} placeholder="https://miro.com/app/board/..." onChange={(event) => onMiroDraft(event.target.value)} />
+          <button className="secondary-button h-11 shrink-0" type="button" disabled={busy || !miroDraft.trim()} onClick={onShareBoard}>
+            Share
+          </button>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase text-muted">In room</p>
+          {room.participants.length ? (
+            <div className="space-y-2">
+              {room.participants.map((participant) => (
+                <div className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2 text-sm" key={participant.userId}>
+                  <span className="truncate font-medium text-ink">{participant.name ?? participant.email}</span>
+                  <span className="shrink-0 text-xs text-muted">{new Date(participant.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Empty</p>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+interface MiroBoardInfo {
+  id: string;
+  name?: string;
+  title?: string;
+}
+
+interface MiroBoardApi {
+  getInfo(): Promise<MiroBoardInfo>;
+}
+
+interface MiroApi {
+  board: MiroBoardApi;
+}
+
+interface MiroWindow extends Window {
+  miro?: MiroApi;
+}
+
+function MiroBoardShareAuth({ onSession }: { onSession: (session: UserSession) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      onSession(await login(email, password));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Authentication failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-paper px-4 py-5 text-ink">
+      <div className="mx-auto max-w-[380px]">
+        <img src="/logo.jpg" alt="Studio McLeod" className="mb-5 h-8 w-auto" />
+        <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          <h1 className="text-base font-semibold">Share Miro board</h1>
+          <p className="mt-1 text-sm text-muted">Sign in to share this board with a Studio meeting room.</p>
+          <div className="mt-5 space-y-4">
+            <label className="field-label">
+              Email
+              <input className="field-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Password
+              <input className="field-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            </label>
+            {error ? <Alert message={error} onDismiss={() => setError(null)} /> : null}
+            <button className="primary-button w-full" type="button" disabled={busy || !email || !password} onClick={() => void submit()}>
+              {busy ? <RefreshCw className="animate-spin" size={18} /> : null}
+              Sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function MiroBoardSharePage({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
+  const [rooms, setRooms] = useState<MeetingRoom[]>([]);
+  const [selectedRoomId, setSelectedRoomId] = useState<MeetingRoomId>("call-hangout-1");
+  const [boardInfo, setBoardInfo] = useState<MiroBoardInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void initialiseMiroShare();
+  }, []);
+
+  async function initialiseMiroShare() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const [roomsResult, board] = await Promise.all([
+        listMeetingRooms(session.token),
+        currentMiroBoardInfo(),
+      ]);
+      setRooms(roomsResult.rooms);
+      setBoardInfo(board);
+      setSelectedRoomId(roomsResult.rooms[0]?.id ?? "call-hangout-1");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not prepare Miro board sharing.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function shareCurrentBoard() {
+    if (!boardInfo) {
+      setMessage("Miro did not provide the current board.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await shareMeetingRoomBoard(session.token, selectedRoomId, { url: miroBoardUrl(boardInfo.id) });
+      const roomName = rooms.find((room) => room.id === selectedRoomId)?.name ?? "the selected room";
+      setMessage(`Shared with ${roomName}.`);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not share the Miro board.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-paper px-4 py-5 text-ink">
+      <div className="mx-auto max-w-[420px]">
+        <div className="mb-5 flex items-center gap-3">
+          <img src="/logo.jpg" alt="Studio McLeod" className="h-8 w-auto" />
+          <div>
+            <h1 className="text-base font-semibold">Share Miro board</h1>
+            <p className="text-xs text-muted">{session.user.email}</p>
+          </div>
+        </div>
+
+        <section className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          {loading ? (
+            <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
+              <RefreshCw className="animate-spin" size={16} />
+              Loading...
+            </p>
+          ) : (
+            <div className="space-y-5">
+              <div className="rounded-lg border border-line bg-stone-50 p-3">
+                <p className="text-xs font-semibold uppercase text-muted">Current board</p>
+                <p className="mt-1 break-words text-sm font-semibold text-ink">{boardInfo ? boardTitle(boardInfo) : "Unavailable"}</p>
+                {boardInfo ? <p className="mt-1 break-all text-xs text-muted">{miroBoardUrl(boardInfo.id)}</p> : null}
+              </div>
+
+              <SelectField label="Meeting room" value={selectedRoomId} values={meetingRoomIds(rooms)} onChange={setSelectedRoomId} />
+
+              <button className="primary-button w-full" type="button" disabled={busy || !boardInfo || rooms.length === 0} onClick={() => void shareCurrentBoard()}>
+                {busy ? <RefreshCw className="animate-spin" size={18} /> : <MonitorUp size={18} />}
+                Share to room
+              </button>
+
+              {message ? <Alert message={message} onDismiss={() => setMessage(null)} /> : null}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+async function currentMiroBoardInfo(): Promise<MiroBoardInfo> {
+  await loadMiroSdk();
+  const miro = (window as MiroWindow).miro;
+  if (!miro?.board?.getInfo) {
+    throw new Error("Open this page from the Studio McLeod app inside Miro.");
+  }
+  const info = await miro.board.getInfo();
+  if (!info.id) {
+    throw new Error("Miro did not return a board ID.");
+  }
+  return info;
+}
+
+function loadMiroSdk(): Promise<void> {
+  if ((window as MiroWindow).miro) return Promise.resolve();
+  const existing = document.querySelector<HTMLScriptElement>("script[data-miro-sdk]");
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Could not load the Miro SDK.")), { once: true });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://miro.com/app/static/sdk/v2/miro.js";
+    script.async = true;
+    script.dataset.miroSdk = "true";
+    script.addEventListener("load", () => resolve(), { once: true });
+    script.addEventListener("error", () => reject(new Error("Could not load the Miro SDK.")), { once: true });
+    document.head.append(script);
+  });
+}
+
+function miroBoardUrl(boardId: string): string {
+  return `https://miro.com/app/board/${boardId}/`;
+}
+
+function boardTitle(board: MiroBoardInfo): string {
+  return board.name ?? board.title ?? board.id;
+}
+
+function meetingRoomIds(rooms: MeetingRoom[]): MeetingRoomId[] {
+  const ids = rooms.map((room) => room.id);
+  return ids.length ? ids : ["call-hangout-1", "call-hangout-2", "call-hangout-3"];
+}
+
+const voiceCommandTargetApps: VoiceCommandTargetApp[] = ["Vectorworks", "Vectorworks 2026", "Vectorworks 2025", "Miro", "Chrome", "Finder", "Other"];
+const voiceCommandActionTypes: VoiceCommandActionType[] = ["shortcut", "macro", "script"];
+const voiceCommandModifiers: VoiceCommandModifier[] = ["command", "shift", "option", "control"];
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  readonly length: number;
+  item(index: number): SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionResultListLike {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResultLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  results: SpeechRecognitionResultListLike;
+}
+
+interface SpeechRecognitionErrorEventLike extends Event {
+  error: string;
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+  continuous: boolean;
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+interface SpeechRecognitionConstructorLike {
+  new(): SpeechRecognitionLike;
+}
+
+interface VoiceWindow extends Window {
+  SpeechRecognition?: SpeechRecognitionConstructorLike;
+  webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+}
+
+interface VoiceCommandDraft {
+  id: string;
+  enabled: boolean;
+  voicePhrase: string;
+  targetApp: VoiceCommandTargetApp;
+  actionType: VoiceCommandActionType;
+  key: string;
+  modifiers: VoiceCommandModifier[];
+  macroName: string;
+  notes: string;
+}
+
+function VoiceCommandsModule({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
+  const [commands, setCommands] = useState<VoiceCommand[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState<VoiceCommandDraft>(blankVoiceCommandDraft());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [heardPhrase, setHeardPhrase] = useState("");
+  const [matchedCommand, setMatchedCommand] = useState<VoiceCommand | null>(null);
+  const [listening, setListening] = useState(false);
+  const [dryRun, setDryRun] = useState(true);
+  const [lastAppleScript, setLastAppleScript] = useState("");
+  const isAdmin = session.user.role === "admin";
+
+  useEffect(() => {
+    void refreshCommands();
+  }, []);
+
+  async function refreshCommands() {
+    setLoading(true);
+    try {
+      const result = await listVoiceCommands(session.token);
+      setCommands(result.commands);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not load Vectorworks voice commands.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveCommand() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const input = draftToVoiceCommandInput(draft);
+      const result = editingId
+        ? await updateVoiceCommand(session.token, editingId, input)
+        : await createVoiceCommand(session.token, input);
+      setCommands((current) => {
+        const withoutExisting = current.filter((command) => command.id !== (editingId ?? result.command.id));
+        return [...withoutExisting, result.command].sort(sortVoiceCommands);
+      });
+      setEditingId(null);
+      setDraft(blankVoiceCommandDraft());
+      setMessage("Voice command saved.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not save voice command.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleCommand(command: VoiceCommand) {
+    setMessage(null);
+    try {
+      const result = await updateVoiceCommand(session.token, command.id, { enabled: !command.enabled });
+      setCommands((current) => current.map((item) => (item.id === command.id ? result.command : item)).sort(sortVoiceCommands));
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not update voice command.");
+    }
+  }
+
+  async function removeCommand(commandId: string) {
+    setMessage(null);
+    try {
+      await deleteVoiceCommand(session.token, commandId);
+      setCommands((current) => current.filter((command) => command.id !== commandId));
+      if (editingId === commandId) {
+        setEditingId(null);
+        setDraft(blankVoiceCommandDraft());
+      }
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not delete voice command.");
+    }
+  }
+
+  async function runCommand(command: VoiceCommand, testOnly: boolean) {
+    setMessage(null);
+    setLastAppleScript("");
+    try {
+      const result = await runVoiceCommand(session.token, command.id, testOnly);
+      setLastAppleScript(result.appleScript);
+      setMessage(result.message);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not run voice command.");
+    }
+  }
+
+  function editCommand(command: VoiceCommand) {
+    setEditingId(command.id);
+    setDraft({
+      id: command.id,
+      enabled: command.enabled,
+      voicePhrase: command.voicePhrase,
+      targetApp: command.targetApp,
+      actionType: command.actionType,
+      key: command.key,
+      modifiers: command.modifiers,
+      macroName: command.macroName,
+      notes: command.notes,
+    });
+  }
+
+  function matchPhrase(phrase: string) {
+    const normalised = phrase.trim().toLowerCase();
+    const match = commands.find((command) => command.enabled && command.voicePhrase.trim().toLowerCase() === normalised) ?? null;
+    setHeardPhrase(normalised);
+    setMatchedCommand(match);
+    setMessage(match ? "Command matched. Review it before running." : "No enabled command matched that phrase.");
+  }
+
+  async function startSpeechRecognition() {
+    const voiceWindow = window as VoiceWindow;
+    const Recognition = voiceWindow.SpeechRecognition ?? voiceWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setMessage("Speech recognition is not available in this browser.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMessage("This browser cannot request microphone access. Type the phrase and press Match for now.");
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      setMessage(microphoneAccessErrorMessage(error));
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.lang = "en-GB";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const result = event.results.item(0);
+      const alternative = result.item(0);
+      stopMediaStream(stream);
+      matchPhrase(alternative.transcript);
+    };
+    recognition.onerror = (event) => {
+      stopMediaStream(stream);
+      setMessage(speechRecognitionErrorMessage(event.error));
+      setListening(false);
+    };
+    recognition.onend = () => {
+      stopMediaStream(stream);
+      setListening(false);
+    };
+    setListening(true);
+    setMessage("Microphone ready. Listening for one phrase.");
+    window.setTimeout(() => recognition.start(), 250);
+  }
+
+  async function importJsonFile(file: File) {
+    setMessage(null);
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const commandsInput = Array.isArray(parsed) ? parsed : isCommandsEnvelope(parsed) ? parsed.commands : undefined;
+      if (!commandsInput) {
+        setMessage("JSON import must be a command array or an object with commands.");
+        return;
+      }
+      const result = await importVoiceCommands(session.token, commandsInput.map(jsonToVoiceCommandInput));
+      setCommands(result.commands);
+      setMessage("Vectorworks voice commands imported.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not import JSON.");
+    }
+  }
+
+  async function importCsvFile(file: File) {
+    setMessage(null);
+    try {
+      const rows = parseCsv(await file.text());
+      const result = await importVoiceCommands(session.token, rows.map(csvRowToVoiceCommandInput));
+      setCommands(result.commands);
+      setMessage("Vectorworks voice commands imported.");
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not import CSV.");
+    }
+  }
+
+  function exportJson() {
+    downloadText("vectorworks-voice-commands.json", JSON.stringify(commands.map(commandToExport), null, 2), "application/json");
+  }
+
+  function exportCsv() {
+    const headers = ["id", "enabled", "voicePhrase", "targetApp", "actionType", "key", "modifiers", "macroName", "notes"];
+    const rows = commands.map((command) => [
+      command.id,
+      String(command.enabled),
+      command.voicePhrase,
+      command.targetApp,
+      command.actionType,
+      command.key,
+      command.modifiers.join("+"),
+      command.macroName,
+      command.notes,
+    ]);
+    downloadText("vectorworks-voice-commands.csv", [headers, ...rows].map(csvLine).join("\n"), "text/csv");
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-7xl px-6 py-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Vectorworks Voice Commands</h2>
+          <p className="text-sm text-muted">Maintain fixed, approved voice shortcuts for Vectorworks and other Studio McLeod tools.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="secondary-button" type="button" onClick={exportJson}>
+            <Download size={16} />
+            JSON
+          </button>
+          <button className="secondary-button" type="button" onClick={exportCsv}>
+            <Download size={16} />
+            CSV
+          </button>
+          {isAdmin ? (
+            <>
+              <label className="secondary-button cursor-pointer">
+                <UploadCloud size={16} />
+                Import JSON
+                <input className="hidden" type="file" accept="application/json" onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void importJsonFile(file);
+                  event.currentTarget.value = "";
+                }} />
+              </label>
+              <label className="secondary-button cursor-pointer">
+                <UploadCloud size={16} />
+                Import CSV
+                <input className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void importCsvFile(file);
+                  event.currentTarget.value = "";
+                }} />
+              </label>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="mb-6 rounded-xl border border-line bg-white p-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="field-label min-w-[260px] flex-1">
+            Heard phrase
+            <input className="field-input" value={heardPhrase} onChange={(event) => setHeardPhrase(event.target.value)} onBlur={() => matchPhrase(heardPhrase)} />
+          </label>
+          <button className="primary-button" type="button" disabled={listening} onClick={() => void startSpeechRecognition()}>
+            {listening ? <RefreshCw className="animate-spin" size={18} /> : <Mic size={18} />}
+            {listening ? "Listening" : "Listen"}
+          </button>
+          <button className="secondary-button" type="button" onClick={() => matchPhrase(heardPhrase)}>
+            <Search size={16} />
+            Match
+          </button>
+          <label className="flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink">
+            <input type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} />
+            Test mode
+          </label>
+        </div>
+        {listening ? <p className="mt-3 text-xs text-muted">Listening for one phrase. You can also type the phrase and press Match.</p> : null}
+        {matchedCommand ? (
+          <div className="mt-4 rounded-lg border border-line bg-stone-50 p-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <InfoItem label="Matched command" value={matchedCommand.voicePhrase} />
+              <InfoItem label="Target app" value={matchedCommand.targetApp} />
+              <InfoItem label="Shortcut" value={shortcutLabel(matchedCommand)} />
+              <InfoItem label="Action" value={matchedCommand.actionType} />
+            </div>
+            <button className="primary-button mt-4" type="button" onClick={() => void runCommand(matchedCommand, dryRun)}>
+              {dryRun ? <Square size={16} /> : <Play size={16} />}
+              {dryRun ? "Test command" : "Run command"}
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="space-y-6">
+        <div className="rounded-xl border border-line bg-white">
+          <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+            <h2 className="font-semibold">Commands</h2>
+            <button className="icon-only" type="button" title="Refresh commands" onClick={() => void refreshCommands()}>
+              <RefreshCw size={17} />
+            </button>
+          </div>
+          {message ? <div className="px-5 py-4"><Alert message={message} onDismiss={() => setMessage(null)} /></div> : null}
+          <div className="overflow-auto">
+            {loading ? (
+              <p className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted">
+                <RefreshCw className="animate-spin" size={16} />
+                Loading...
+              </p>
+            ) : commands.length === 0 ? (
+              <p className="px-5 py-8 text-sm text-muted">No Vectorworks voice commands yet.</p>
+            ) : (
+              <table className="w-full min-w-[920px] text-left text-sm">
+                <thead className="border-b border-line bg-stone-50 text-xs uppercase text-muted">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Phrase</th>
+                    <th className="px-4 py-3 font-semibold">Target</th>
+                    <th className="px-4 py-3 font-semibold">Action</th>
+                    <th className="px-4 py-3 font-semibold">Shortcut</th>
+                    <th className="px-4 py-3 font-semibold">Notes</th>
+                    <th className="px-4 py-3 font-semibold">Controls</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {commands.map((command) => (
+                    <tr key={command.id} className={command.enabled ? "bg-white" : "bg-stone-50 text-muted"}>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-ink">{command.voicePhrase}</div>
+                        <div className="text-xs text-muted">{command.id}</div>
+                      </td>
+                      <td className="px-4 py-3">{command.targetApp}</td>
+                      <td className="px-4 py-3">{command.actionType}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{shortcutLabel(command)}</td>
+                      <td className="max-w-[280px] px-4 py-3 text-xs text-muted">{command.notes}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button className="secondary-button h-9" type="button" onClick={() => void runCommand(command, true)}>
+                            <Square size={15} />
+                            Test
+                          </button>
+                          <button className="secondary-button h-9" type="button" disabled={!command.enabled} onClick={() => void runCommand(command, false)}>
+                            <Play size={15} />
+                            Run
+                          </button>
+                          {isAdmin ? (
+                            <>
+                              <button className="secondary-button h-9" type="button" onClick={() => editCommand(command)}>
+                                <Save size={15} />
+                                Edit
+                              </button>
+                              <button className="secondary-button h-9" type="button" onClick={() => void toggleCommand(command)}>
+                                {command.enabled ? "Disable" : "Enable"}
+                              </button>
+                              <button className="icon-only h-9 w-9 text-red-600" type="button" title="Delete command" onClick={() => void removeCommand(command.id)}>
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {isAdmin ? (
+          <VoiceCommandEditor
+            busy={busy}
+            draft={draft}
+            editingId={editingId}
+            onCancel={() => {
+              setEditingId(null);
+              setDraft(blankVoiceCommandDraft());
+            }}
+            onDraft={setDraft}
+            onSave={() => void saveCommand()}
+          />
+        ) : null}
+      </section>
+
+      {lastAppleScript ? (
+        <section className="mt-6 rounded-xl border border-line bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold">Generated AppleScript</h2>
+          <pre className="overflow-auto rounded-lg bg-stone-100 p-3 text-xs text-ink">{lastAppleScript}</pre>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function VoiceCommandEditor({
+  busy,
+  draft,
+  editingId,
+  onCancel,
+  onDraft,
+  onSave,
+}: {
+  busy: boolean;
+  draft: VoiceCommandDraft;
+  editingId: string | null;
+  onCancel: () => void;
+  onDraft: (draft: VoiceCommandDraft) => void;
+  onSave: () => void;
+}) {
+  function update<K extends keyof VoiceCommandDraft>(key: K, value: VoiceCommandDraft[K]) {
+    onDraft({ ...draft, [key]: value });
+  }
+
+  function toggleModifier(modifier: VoiceCommandModifier) {
+    update(
+      "modifiers",
+      draft.modifiers.includes(modifier)
+        ? draft.modifiers.filter((item) => item !== modifier)
+        : [...draft.modifiers, modifier],
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-line bg-white p-5">
+      <div className="mb-4 flex items-center gap-3">
+        <Mic className="text-blue" size={20} />
+        <h2 className="text-base font-semibold">{editingId ? "Edit command" : "Add command"}</h2>
+      </div>
+      <div className="space-y-4">
+        <label className="field-label">
+          ID
+          <input className="field-input" value={draft.id} onChange={(event) => update("id", event.target.value)} />
+        </label>
+        <label className="field-label">
+          Voice phrase
+          <input className="field-input" value={draft.voicePhrase} onChange={(event) => update("voicePhrase", event.target.value)} />
+        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <SelectField label="Target app" value={draft.targetApp} values={voiceCommandTargetApps} onChange={(value) => update("targetApp", value)} />
+          <SelectField label="Action type" value={draft.actionType} values={voiceCommandActionTypes} onChange={(value) => update("actionType", value)} />
+        </div>
+        <label className="field-label">
+          Key
+          <input className="field-input" value={draft.key} onChange={(event) => update("key", event.target.value)} />
+        </label>
+        <div>
+          <p className="mb-2 text-sm font-medium text-ink">Modifiers</p>
+          <div className="flex flex-wrap gap-2">
+            {voiceCommandModifiers.map((modifier) => (
+              <label className="flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink" key={modifier}>
+                <input type="checkbox" checked={draft.modifiers.includes(modifier)} onChange={() => toggleModifier(modifier)} />
+                {modifier}
+              </label>
+            ))}
+          </div>
+        </div>
+        <label className="field-label">
+          Macro name
+          <input className="field-input" value={draft.macroName} onChange={(event) => update("macroName", event.target.value)} />
+        </label>
+        <label className="field-label">
+          Notes
+          <textarea className="mt-2 min-h-24 w-full rounded-lg border border-line bg-white px-3 py-3 text-sm text-ink outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10" value={draft.notes} onChange={(event) => update("notes", event.target.value)} />
+        </label>
+        <label className="flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink">
+          <input type="checkbox" checked={draft.enabled} onChange={(event) => update("enabled", event.target.checked)} />
+          Enabled
+        </label>
+        <div className="flex gap-2">
+          <button className="primary-button flex-1" type="button" disabled={busy || !draft.voicePhrase || (draft.actionType === "shortcut" && !draft.key)} onClick={onSave}>
+            {busy ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+            Save
+          </button>
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase text-muted">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-ink">{value}</p>
     </div>
   );
 }
@@ -1353,6 +2469,228 @@ function GeneratedImagePreview({
       ) : null}
     </>
   );
+}
+
+function blankVoiceCommandDraft(): VoiceCommandDraft {
+  return {
+    id: "",
+    enabled: true,
+    voicePhrase: "",
+    targetApp: "Vectorworks",
+    actionType: "shortcut",
+    key: "",
+    modifiers: [],
+    macroName: "",
+    notes: "",
+  };
+}
+
+function draftToVoiceCommandInput(draft: VoiceCommandDraft): VoiceCommandInput {
+  return {
+    id: draft.id || undefined,
+    enabled: draft.enabled,
+    voicePhrase: draft.voicePhrase,
+    targetApp: draft.targetApp,
+    actionType: draft.actionType,
+    key: draft.key,
+    modifiers: draft.modifiers,
+    macroName: draft.macroName,
+    notes: draft.notes,
+  };
+}
+
+function sortVoiceCommands(left: VoiceCommand, right: VoiceCommand): number {
+  return left.voicePhrase.localeCompare(right.voicePhrase);
+}
+
+function shortcutLabel(command: VoiceCommand): string {
+  if (command.actionType !== "shortcut") return command.macroName || command.actionType;
+  return [...command.modifiers, command.key].filter(Boolean).join("+") || "No shortcut";
+}
+
+function commandToExport(command: VoiceCommand): VoiceCommandInput {
+  return {
+    id: command.id,
+    enabled: command.enabled,
+    voicePhrase: command.voicePhrase,
+    targetApp: command.targetApp,
+    actionType: command.actionType,
+    key: command.key,
+    modifiers: command.modifiers,
+    macroName: command.macroName,
+    notes: command.notes,
+  };
+}
+
+function speechRecognitionErrorMessage(error: string): string {
+  if (error === "not-allowed" || error === "service-not-allowed") {
+    return "Microphone access was blocked. Allow microphone access for this browser, then try Listen again.";
+  }
+  if (error === "audio-capture") {
+    return "No microphone was available to the browser.";
+  }
+  if (error === "no-speech") {
+    return "No speech was heard. Try again, or type the phrase and press Match.";
+  }
+  if (error === "network") {
+    return "Speech recognition could not reach the browser speech service. Type the phrase and press Match for now.";
+  }
+  if (error === "aborted") {
+    return "Speech recognition was stopped before a phrase was heard.";
+  }
+  return `Speech recognition failed: ${error}. Type the phrase and press Match for now.`;
+}
+
+function microphoneAccessErrorMessage(error: unknown): string {
+  if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+    return "Microphone access was blocked. Allow microphone access for this site in Chrome, then try Listen again.";
+  }
+  if (error instanceof DOMException && error.name === "NotFoundError") {
+    return "Chrome could not find a microphone. Check the selected input device in Chrome or macOS settings.";
+  }
+  if (error instanceof DOMException && error.name === "NotReadableError") {
+    return "Chrome could not read from the microphone. Another app may be using it, or macOS may be blocking access.";
+  }
+  return "Chrome could not start the microphone. Type the phrase and press Match for now.";
+}
+
+function stopMediaStream(stream: MediaStream) {
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+interface CommandsEnvelope {
+  commands: unknown[];
+}
+
+function isCommandsEnvelope(value: unknown): value is CommandsEnvelope {
+  return typeof value === "object" && value !== null && "commands" in value && Array.isArray(value.commands);
+}
+
+function jsonToVoiceCommandInput(value: unknown): VoiceCommandInput {
+  if (!isObjectRecord(value)) {
+    throw new Error("Each imported command must be an object.");
+  }
+  return {
+    id: optionalText(value.id),
+    enabled: value.enabled === undefined ? true : value.enabled === true || value.enabled === "true",
+    voicePhrase: requiredText(value.voicePhrase, "Voice phrase is required."),
+    targetApp: targetAppValue(requiredText(value.targetApp, "Target app is required.")),
+    actionType: actionTypeValue(requiredText(value.actionType, "Action type is required.")),
+    key: optionalText(value.key) ?? "",
+    modifiers: modifiersValue(value.modifiers),
+    macroName: optionalText(value.macroName) ?? "",
+    notes: optionalText(value.notes) ?? "",
+  };
+}
+
+function csvRowToVoiceCommandInput(row: Record<string, string>): VoiceCommandInput {
+  return {
+    id: row.id || undefined,
+    enabled: row.enabled !== "false",
+    voicePhrase: row.voicePhrase,
+    targetApp: targetAppValue(row.targetApp),
+    actionType: actionTypeValue(row.actionType),
+    key: row.key ?? "",
+    modifiers: row.modifiers ? row.modifiers.split("+").filter(Boolean).map(modifierValue) : [],
+    macroName: row.macroName ?? "",
+    notes: row.notes ?? "",
+  };
+}
+
+function targetAppValue(value: string): VoiceCommandTargetApp {
+  if (voiceCommandTargetApps.includes(value as VoiceCommandTargetApp)) return value as VoiceCommandTargetApp;
+  throw new Error("Target app is not supported.");
+}
+
+function actionTypeValue(value: string): VoiceCommandActionType {
+  if (voiceCommandActionTypes.includes(value as VoiceCommandActionType)) return value as VoiceCommandActionType;
+  throw new Error("Action type is not supported.");
+}
+
+function modifiersValue(value: unknown): VoiceCommandModifier[] {
+  if (value === undefined) return [];
+  if (Array.isArray(value)) return value.map((item) => modifierValue(requiredText(item, "Modifier must be text.")));
+  if (typeof value === "string") return value.split("+").filter(Boolean).map(modifierValue);
+  throw new Error("Modifiers must be a list.");
+}
+
+function modifierValue(value: string): VoiceCommandModifier {
+  if (voiceCommandModifiers.includes(value as VoiceCommandModifier)) return value as VoiceCommandModifier;
+  throw new Error("Modifier is not supported.");
+}
+
+function parseCsv(text: string): Record<string, string>[] {
+  const rows = csvRows(text);
+  const headers = rows[0] ?? [];
+  return rows.slice(1).filter((row) => row.some(Boolean)).map((row) => {
+    const record: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      record[header] = row[index] ?? "";
+    });
+    return record;
+  });
+}
+
+function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    const next = text[index + 1];
+    if (character === "\"" && quoted && next === "\"") {
+      cell += "\"";
+      index += 1;
+    } else if (character === "\"") {
+      quoted = !quoted;
+    } else if (character === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function csvLine(values: string[]): string {
+  return values.map((value) => `"${value.replace(/"/g, "\"\"")}"`).join(",");
+}
+
+function downloadText(fileName: string, content: string, contentType: string) {
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function requiredText(value: unknown, message: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(message);
+  return value;
+}
+
+function optionalText(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new Error("Expected text.");
+  return value;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isUnauthorised(error: unknown): boolean {

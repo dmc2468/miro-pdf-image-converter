@@ -1,4 +1,4 @@
-import type { AdminUser, ConversionJob, UserRole, UserSession } from "../../shared/types";
+import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -178,4 +178,85 @@ export function fetchSessions(): Promise<{ sessions: SessionEntry[] }> {
 
 export function fetchVersion(): Promise<{ version: string; gitSha: string; generatedAt: string }> {
   return apiFetch<{ version: string; gitSha: string; generatedAt: string }>("/api/version");
+}
+
+export function listVoiceCommands(token: string): Promise<{ commands: VoiceCommand[] }> {
+  return apiFetch<{ commands: VoiceCommand[] }>("/api/voice-commands", { token });
+}
+
+export function createVoiceCommand(token: string, input: VoiceCommandInput): Promise<{ command: VoiceCommand }> {
+  return apiFetch<{ command: VoiceCommand }>("/api/voice-commands", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateVoiceCommand(token: string, commandId: string, input: Partial<VoiceCommandInput>): Promise<{ command: VoiceCommand }> {
+  return apiFetch<{ command: VoiceCommand }>(`/api/voice-commands/${commandId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteVoiceCommand(token: string, commandId: string): Promise<void> {
+  return apiFetch<void>(`/api/voice-commands/${commandId}`, { method: "DELETE", token });
+}
+
+export function importVoiceCommands(token: string, commands: VoiceCommandInput[]): Promise<{ commands: VoiceCommand[] }> {
+  return apiFetch<{ commands: VoiceCommand[] }>("/api/voice-commands/import", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ commands }),
+  });
+}
+
+export function runVoiceCommand(token: string, commandId: string, dryRun: boolean): Promise<VoiceCommandRunResult> {
+  return apiFetch<VoiceCommandRunResult>(`/api/voice-commands/${commandId}/run`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ dryRun }),
+  });
+}
+
+export function listMeetingRooms(token: string): Promise<{ rooms: MeetingRoom[] }> {
+  return apiFetch<{ rooms: MeetingRoom[] }>("/api/meeting-rooms", { token });
+}
+
+export function updateMeetingRoom(token: string, roomId: MeetingRoomId, input: MeetingRoomInput): Promise<{ room: MeetingRoom }> {
+  return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function joinMeetingRoom(token: string, roomId: MeetingRoomId): Promise<{ room: MeetingRoom }> {
+  return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}/join`, {
+    method: "POST",
+    token,
+  });
+}
+
+export function leaveMeetingRoom(token: string, roomId: MeetingRoomId): Promise<{ room: MeetingRoom }> {
+  return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}/leave`, {
+    method: "POST",
+    token,
+  });
+}
+
+export function shareMeetingRoomBoard(token: string, roomId: MeetingRoomId, input: MeetingRoomBoardInput): Promise<{ room: MeetingRoom }> {
+  return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}/miro-board`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function clearMeetingRoomBoard(token: string, roomId: MeetingRoomId): Promise<{ room: MeetingRoom }> {
+  return apiFetch<{ room: MeetingRoom }>(`/api/meeting-rooms/${roomId}/miro-board`, {
+    method: "DELETE",
+    token,
+  });
 }

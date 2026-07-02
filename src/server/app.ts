@@ -1,4 +1,6 @@
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -12,11 +14,15 @@ import { serializeAdminUser, type UserRecord } from "./repositories/users.js";
 import type { ObjectStore } from "./storage/objectStore.js";
 import { ConversionService } from "./services/conversion.js";
 import { isDrawingScale, isOrientation, isPaperSize } from "../shared/scaling.js";
-import type { ConversionJob } from "../shared/types.js";
+import type { ConversionJob, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, VoiceCommandInput, VoiceCommandModifier, VoiceCommandRunResult } from "../shared/types.js";
 import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
 import { loadSessions } from "./sessions.js";
+import { serializeMeetingRoom } from "./repositories/meeting-rooms.js";
+import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
+
+const execFileAsync = promisify(execFile);
 
 export function createApp(repositories: Repositories, objectStore: ObjectStore): express.Express {
   const app = express();
@@ -39,9 +45,14 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   const conversionService = new ConversionService(repositories.jobs, objectStore);
 
   app.set("trust proxy", 1);
-  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
   app.use(cors({ origin: config.frontendBaseUrl }));
   app.use(express.json({ limit: "1mb" }));
+
+  app.use((_request, response, next) => {
+    response.setHeader("Content-Security-Policy", "frame-ancestors 'self' https://miro.com https://*.miro.com");
+    next();
+  });
 
   app.use((request, response, next) => {
     const start = Date.now();
@@ -284,6 +295,199 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.get("/api/voice-commands", requireAuth, async (_request, response, next) => {
+    try {
+      const commands = await repositories.voiceCommands.list();
+      response.json({ commands: commands.map(serializeVoiceCommand) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/voice-commands", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      const input = parseVoiceCommandInput(request.body);
+      const command = await repositories.voiceCommands.create(input);
+      response.status(201).json({ command: serializeVoiceCommand(command) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/voice-commands/:commandId", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      const existing = await repositories.voiceCommands.findById(String(request.params.commandId));
+      if (!existing) {
+        throw new HttpError(404, "Voice command not found.");
+      }
+      const input = parsePartialVoiceCommandInput(request.body);
+      const command = await repositories.voiceCommands.update(existing.id, input);
+      if (!command) {
+        throw new HttpError(404, "Voice command not found.");
+      }
+      response.json({ command: serializeVoiceCommand(command) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/voice-commands/:commandId", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      await repositories.voiceCommands.delete(String(request.params.commandId));
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/voice-commands/import", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      const { commands } = request.body as { commands?: unknown };
+      if (!Array.isArray(commands)) {
+        throw new HttpError(400, "Import must include a commands array.");
+      }
+      const parsedCommands = commands.map(parseVoiceCommandInput);
+      const savedCommands = await repositories.voiceCommands.replaceAll(parsedCommands);
+      response.json({ commands: savedCommands.map(serializeVoiceCommand) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/voice-commands/:commandId/run", requireAuth, async (request, response, next) => {
+    try {
+      const command = await repositories.voiceCommands.findById(String(request.params.commandId));
+      if (!command) {
+        throw new HttpError(404, "Voice command not found.");
+      }
+      const { dryRun } = request.body as { dryRun?: boolean };
+      const result = await runVoiceCommand(command, dryRun !== false);
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/local/voice-commands", async (request, response, next) => {
+    try {
+      if (!isLocalRequest(request)) {
+        throw new HttpError(403, "Local voice command helper requests must come from this Mac.");
+      }
+      const commands = await repositories.voiceCommands.list();
+      response.json({ commands: commands.filter((command) => command.enabled).map(serializeVoiceCommand) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/local/voice-commands/run", async (request, response, next) => {
+    try {
+      if (!isLocalRequest(request)) {
+        throw new HttpError(403, "Local voice command helper requests must come from this Mac.");
+      }
+      const { voicePhrase, dryRun } = request.body as { voicePhrase?: string; dryRun?: boolean };
+      if (!voicePhrase) {
+        throw new HttpError(400, "Voice phrase is required.");
+      }
+      const command = await findVoiceCommandByPhrase(repositories, voicePhrase);
+      if (!command) {
+        throw new HttpError(404, "No enabled voice command matched that phrase.");
+      }
+      const result = await runVoiceCommand(command, dryRun === true);
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/meeting-rooms", requireAuth, async (_request, response, next) => {
+    try {
+      const rooms = await repositories.meetingRooms.list();
+      response.json({ rooms: rooms.map(serializeMeetingRoom) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/meeting-rooms/:roomId", requireAuth, requireAdmin, async (request, response, next) => {
+    try {
+      const roomId = parseMeetingRoomId(request.params.roomId);
+      const input = parseMeetingRoomInput(request.body);
+      const room = await repositories.meetingRooms.update(roomId, input);
+      if (!room) {
+        throw new HttpError(404, "Meeting room not found.");
+      }
+      response.json({ room: serializeMeetingRoom(room) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/meeting-rooms/:roomId/join", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const storedUser = await repositories.users.findById(user.id);
+      const room = await repositories.meetingRooms.join(parseMeetingRoomId(request.params.roomId), {
+        userId: user.id,
+        email: user.email,
+        name: storedUser?.name,
+        joinedAt: new Date().toISOString(),
+      });
+      if (!room) {
+        throw new HttpError(404, "Meeting room not found.");
+      }
+      response.json({ room: serializeMeetingRoom(room) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/meeting-rooms/:roomId/leave", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const room = await repositories.meetingRooms.leave(parseMeetingRoomId(request.params.roomId), user.id);
+      if (!room) {
+        throw new HttpError(404, "Meeting room not found.");
+      }
+      response.json({ room: serializeMeetingRoom(room) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/meeting-rooms/:roomId/miro-board", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const storedUser = await repositories.users.findById(user.id);
+      const input = parseMeetingRoomBoardInput(request.body);
+      const room = await repositories.meetingRooms.shareBoard(parseMeetingRoomId(request.params.roomId), {
+        url: input.url,
+        sharedByUserId: user.id,
+        sharedByEmail: user.email,
+        sharedByName: storedUser?.name,
+        sharedAt: new Date().toISOString(),
+      });
+      if (!room) {
+        throw new HttpError(404, "Meeting room not found.");
+      }
+      response.json({ room: serializeMeetingRoom(room) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/meeting-rooms/:roomId/miro-board", requireAuth, async (request, response, next) => {
+    try {
+      const room = await repositories.meetingRooms.clearBoard(parseMeetingRoomId(request.params.roomId));
+      if (!room) {
+        throw new HttpError(404, "Meeting room not found.");
+      }
+      response.json({ room: serializeMeetingRoom(room) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/jobs", requireAuth, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;
@@ -448,6 +652,277 @@ function serializeJobWithUser(job: JobRecord, user: UserRecord | null): Conversi
       name: user.name,
     } : undefined,
   };
+}
+
+function parseMeetingRoomId(value: unknown): MeetingRoomId {
+  if (value === "call-hangout-1" || value === "call-hangout-2" || value === "call-hangout-3") {
+    return value;
+  }
+  throw new HttpError(404, "Meeting room not found.");
+}
+
+function parseMeetingRoomInput(value: unknown): MeetingRoomInput {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "Meeting room update must be an object.");
+  }
+  return {
+    meetUrl: optionalExternalUrl(value.meetUrl) ?? "",
+  };
+}
+
+function parseMeetingRoomBoardInput(value: unknown): MeetingRoomBoardInput {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "Miro board must be an object.");
+  }
+  const url = requiredExternalUrl(value.url, "Miro board URL is required.");
+  const host = new URL(url).hostname.toLowerCase();
+  if (!host.endsWith("miro.com")) {
+    throw new HttpError(400, "Miro board URL must be a miro.com link.");
+  }
+  return { url };
+}
+
+function parseVoiceCommandInput(value: unknown): VoiceCommandInput {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "Voice command must be an object.");
+  }
+
+  const id = optionalString(value.id);
+  const enabled = booleanValue(value.enabled, true);
+  const voicePhrase = requiredString(value.voicePhrase, "Voice phrase is required.");
+  const targetApp = requiredString(value.targetApp, "Target app is required.");
+  const actionType = requiredString(value.actionType, "Action type is required.");
+  const key = optionalString(value.key) ?? "";
+  const macroName = optionalString(value.macroName) ?? "";
+  const notes = optionalString(value.notes) ?? "";
+  const modifiers = parseModifiers(value.modifiers);
+
+  if (!isVoiceCommandTargetApp(targetApp)) {
+    throw new HttpError(400, "Target app is not supported.");
+  }
+  if (!isVoiceCommandActionType(actionType)) {
+    throw new HttpError(400, "Action type is not supported.");
+  }
+  if (actionType === "shortcut" && !key.trim()) {
+    throw new HttpError(400, "Shortcut commands require a key.");
+  }
+
+  return normaliseVoiceCommandInput({
+    id,
+    enabled,
+    voicePhrase,
+    targetApp,
+    actionType,
+    key,
+    modifiers,
+    macroName,
+    notes,
+  });
+}
+
+function parsePartialVoiceCommandInput(value: unknown): Partial<VoiceCommandInput> {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "Voice command update must be an object.");
+  }
+
+  const input: Partial<VoiceCommandInput> = {};
+  if (value.id !== undefined) input.id = optionalString(value.id);
+  if (value.enabled !== undefined) input.enabled = booleanValue(value.enabled, true);
+  if (value.voicePhrase !== undefined) input.voicePhrase = requiredString(value.voicePhrase, "Voice phrase is required.");
+  if (value.targetApp !== undefined) {
+    const targetApp = requiredString(value.targetApp, "Target app is required.");
+    if (!isVoiceCommandTargetApp(targetApp)) {
+      throw new HttpError(400, "Target app is not supported.");
+    }
+    input.targetApp = targetApp;
+  }
+  if (value.actionType !== undefined) {
+    const actionType = requiredString(value.actionType, "Action type is required.");
+    if (!isVoiceCommandActionType(actionType)) {
+      throw new HttpError(400, "Action type is not supported.");
+    }
+    input.actionType = actionType;
+  }
+  if (value.key !== undefined) input.key = optionalString(value.key) ?? "";
+  if (value.modifiers !== undefined) input.modifiers = parseModifiers(value.modifiers);
+  if (value.macroName !== undefined) input.macroName = optionalString(value.macroName) ?? "";
+  if (value.notes !== undefined) input.notes = optionalString(value.notes) ?? "";
+  return input;
+}
+
+async function runVoiceCommand(command: VoiceCommandRecord, dryRun: boolean): Promise<VoiceCommandRunResult> {
+  if (!command.enabled) {
+    throw new HttpError(400, "This voice command is disabled.");
+  }
+  if (command.actionType !== "shortcut") {
+    throw new HttpError(400, "Only shortcut voice commands can run in version 1.");
+  }
+  const appleScript = appleScriptForCommand(command);
+  if (!dryRun) {
+    try {
+      await execFileAsync("osascript", ["-e", appleScript]);
+    } catch (error) {
+      throw new HttpError(400, appleScriptErrorMessage(error, command.targetApp));
+    }
+  }
+  return {
+    command: serializeVoiceCommand(command),
+    appleScript,
+    dryRun,
+    message: dryRun ? "Dry run complete. No keystroke was sent." : "Shortcut sent.",
+  };
+}
+
+async function findVoiceCommandByPhrase(repositories: Repositories, voicePhrase: string): Promise<VoiceCommandRecord | null> {
+  const normalisedPhrase = voicePhrase.trim().toLowerCase();
+  const commands = await repositories.voiceCommands.list();
+  return commands.find((command) => command.enabled && command.voicePhrase.trim().toLowerCase() === normalisedPhrase) ?? null;
+}
+
+function isLocalRequest(request: Request): boolean {
+  const ip = (request.ip ?? "").replace("::ffff:", "");
+  return ip === "::1" || ip === "127.0.0.1" || ip === "localhost";
+}
+
+function appleScriptErrorMessage(error: unknown, targetApp: string): string {
+  const message = isObjectRecord(error) && typeof error.message === "string" ? error.message : "";
+  if (message.includes("No open Vectorworks application was found")) {
+    return "No open Vectorworks application was found. Open your Vectorworks version, then run the command again.";
+  }
+  if (message.includes("Can’t get application") || message.includes("Can't get application")) {
+    return `macOS could not find ${targetApp}. Check the target app name or choose the installed Vectorworks version.`;
+  }
+  return "macOS could not run the shortcut. Check Accessibility permissions for the local server process.";
+}
+
+function appleScriptForCommand(command: VoiceCommandRecord): string {
+  const modifierScript = command.modifiers.length ? ` using {${command.modifiers.map(appleScriptModifier).join(", ")}}` : "";
+  const keyCommand = appleScriptKeyCommand(command.key, modifierScript);
+  if (command.targetApp.startsWith("Vectorworks")) {
+    return [
+      "tell application \"System Events\"",
+      "  set vectorworksProcesses to every process whose name starts with \"Vectorworks\" and name does not contain \"Cloud\" and name does not contain \"Package\" and name does not contain \"Install\" and name does not contain \"Updater\"",
+      "  if (count of vectorworksProcesses) is 0 then error \"No open Vectorworks application was found.\"",
+      "  set frontmost of item 1 of vectorworksProcesses to true",
+      "  delay 0.2",
+      `  ${keyCommand}`,
+      "end tell",
+    ].join("\n");
+  }
+  const appName = escapeAppleScriptString(command.targetApp);
+  return `tell application "${appName}" to activate\ntell application "System Events" to ${keyCommand}`;
+}
+
+function appleScriptKeyCommand(key: string, modifierScript: string): string {
+  const keyCode = keyCodeForShortcutKey(key);
+  if (keyCode !== undefined) {
+    return `key code ${keyCode}${modifierScript}`;
+  }
+  return `keystroke "${escapeAppleScriptString(key)}"${modifierScript}`;
+}
+
+function keyCodeForShortcutKey(key: string): number | undefined {
+  const normalised = key.trim().toLowerCase();
+  const topRowCodes: Record<string, number> = {
+    "0": 29,
+    "1": 18,
+    "2": 19,
+    "3": 20,
+    "4": 21,
+    "5": 23,
+    "6": 22,
+    "7": 26,
+    "8": 28,
+    "9": 25,
+  };
+  const keypadCodes: Record<string, number> = {
+    "0": 82,
+    "1": 83,
+    "2": 84,
+    "3": 85,
+    "4": 86,
+    "5": 87,
+    "6": 88,
+    "7": 89,
+    "8": 91,
+    "9": 92,
+  };
+  const keypadMatch = /^(?:numpad|keypad|numeric)\s*([0-9])$/.exec(normalised);
+  if (keypadMatch?.[1]) {
+    return keypadCodes[keypadMatch[1]];
+  }
+  return topRowCodes[normalised];
+}
+
+function appleScriptModifier(modifier: VoiceCommandModifier): string {
+  return `${modifier} down`;
+}
+
+function escapeAppleScriptString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
+function parseModifiers(value: unknown): VoiceCommandModifier[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, "Modifiers must be a list.");
+  }
+  return value.map((item) => {
+    if (typeof item !== "string" || !isVoiceCommandModifier(item)) {
+      throw new HttpError(400, "Modifier is not supported.");
+    }
+    return item;
+  });
+}
+
+function requiredString(value: unknown, message: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, message);
+  }
+  return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") {
+    throw new HttpError(400, "Expected text value.");
+  }
+  return value;
+}
+
+function requiredExternalUrl(value: unknown, message: string): string {
+  const url = optionalExternalUrl(value);
+  if (!url) {
+    throw new HttpError(400, message);
+  }
+  return url;
+}
+
+function optionalExternalUrl(value: unknown): string | undefined {
+  const text = optionalString(value)?.trim();
+  if (!text) return undefined;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new HttpError(400, "URL must be valid.");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new HttpError(400, "URL must start with http or https.");
+  }
+  return url.toString();
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") {
+    throw new HttpError(400, "Expected true or false value.");
+  }
+  return value;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function findJobForRequestUser(repositories: Repositories, jobId: string, user: AuthenticatedRequest["user"]): Promise<JobRecord | null> {
