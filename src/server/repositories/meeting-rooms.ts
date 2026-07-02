@@ -1,4 +1,4 @@
-import type { Collection, Db } from "mongodb";
+import type { Collection, Db, UpdateFilter } from "mongodb";
 import type { MeetingRoom, MeetingRoomBoard, MeetingRoomId, MeetingRoomInput, MeetingRoomParticipant } from "../../shared/types.js";
 
 export interface MeetingRoomRecord extends Omit<MeetingRoom, "createdAt" | "updatedAt"> {
@@ -108,14 +108,26 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
   async leave(id: MeetingRoomId, userId: string): Promise<MeetingRoomRecord | null> {
     const room = await this.findById(id);
     if (!room) return null;
+    const participants = room.participants.filter((item) => item.userId !== userId);
+    const update: UpdateFilter<MeetingRoomRecord> = participants.length
+      ? {
+          $set: {
+            participants,
+            updatedAt: new Date(),
+          },
+        }
+      : {
+          $set: {
+            participants,
+            updatedAt: new Date(),
+          },
+          $unset: {
+            miroBoard: "",
+          },
+        };
     await this.collection.updateOne(
       { id },
-      {
-        $set: {
-          participants: room.participants.filter((item) => item.userId !== userId),
-          updatedAt: new Date(),
-        },
-      },
+      update,
     );
     return this.findById(id);
   }
@@ -184,6 +196,7 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
     const room = await this.findById(id);
     if (!room) return null;
     room.participants = room.participants.filter((item) => item.userId !== userId);
+    if (!room.participants.length) room.miroBoard = undefined;
     room.updatedAt = new Date();
     return room;
   }
