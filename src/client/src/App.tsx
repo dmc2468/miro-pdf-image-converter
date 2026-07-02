@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, TeamSpeakBridgeStatus, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
-import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateMeetingRoom, updateUser, updateVoiceCommand } from "./api";
+import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
@@ -637,9 +637,7 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [miroDrafts, setMiroDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
-  const [meetDrafts, setMeetDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
   const [busyRoomId, setBusyRoomId] = useState<MeetingRoomId | null>(null);
-  const isAdmin = session.user.role === "admin";
 
   useEffect(() => {
     void refreshRooms();
@@ -653,13 +651,6 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
       const result = await listMeetingRooms(session.token);
       setRooms(result.rooms);
       setTeamSpeakBridgeStatuses(result.teamSpeakBridgeStatuses ?? []);
-      setMeetDrafts((current) => {
-        const next = { ...current };
-        result.rooms.forEach((room) => {
-          if (next[room.id] === undefined) next[room.id] = room.meetUrl;
-        });
-        return next;
-      });
     } catch (error) {
       if (isUnauthorised(error)) {
         onSessionExpired();
@@ -707,24 +698,6 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
         return;
       }
       setMessage(error instanceof Error ? error.message : "Could not leave meeting room.");
-    } finally {
-      setBusyRoomId(null);
-    }
-  }
-
-  async function saveMeetUrl(room: MeetingRoom) {
-    setBusyRoomId(room.id);
-    setMessage(null);
-    try {
-      const result = await updateMeetingRoom(session.token, room.id, { meetUrl: meetDrafts[room.id] ?? "" });
-      replaceRoom(result.room);
-      setMessage("Meet link saved.");
-    } catch (error) {
-      if (isUnauthorised(error)) {
-        onSessionExpired();
-        return;
-      }
-      setMessage(error instanceof Error ? error.message : "Could not save Meet link.");
     } finally {
       setBusyRoomId(null);
     }
@@ -798,8 +771,6 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
             {rooms.map((room) => (
               <MeetingRoomCard
                 busy={busyRoomId === room.id}
-                isAdmin={isAdmin}
-                meetDraft={meetDrafts[room.id] ?? ""}
                 miroDraft={miroDrafts[room.id] ?? ""}
                 room={room}
                 session={session}
@@ -807,9 +778,7 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
                 onClearBoard={() => void clearBoard(room)}
                 onJoin={() => void joinRoom(room)}
                 onLeave={() => void leaveRoom(room)}
-                onMeetDraft={(value) => setMeetDrafts((current) => ({ ...current, [room.id]: value }))}
                 onMiroDraft={(value) => setMiroDrafts((current) => ({ ...current, [room.id]: value }))}
-                onSaveMeetUrl={() => void saveMeetUrl(room)}
                 onShareBoard={() => void shareBoard(room)}
               />
             ))}
@@ -889,31 +858,23 @@ function relativeBridgeTime(ageMs: number): string {
 
 function MeetingRoomCard({
   busy,
-  isAdmin,
-  meetDraft,
   miroDraft,
   room,
   session,
   onClearBoard,
   onJoin,
   onLeave,
-  onMeetDraft,
   onMiroDraft,
-  onSaveMeetUrl,
   onShareBoard,
 }: {
   busy: boolean;
-  isAdmin: boolean;
-  meetDraft: string;
   miroDraft: string;
   room: MeetingRoom;
   session: UserSession;
   onClearBoard: () => void;
   onJoin: () => void;
   onLeave: () => void;
-  onMeetDraft: (value: string) => void;
   onMiroDraft: (value: string) => void;
-  onSaveMeetUrl: () => void;
   onShareBoard: () => void;
 }) {
   const joined = room.participants.some((participant) => participant.userId === session.user.id);
@@ -949,18 +910,26 @@ function MeetingRoomCard({
           ) : null}
         </div>
 
-        {isAdmin ? (
-          <div className="rounded-lg border border-line bg-stone-50 p-3">
-            <label className="field-label">
-              Meet link
-              <input className="field-input" value={meetDraft} onChange={(event) => onMeetDraft(event.target.value)} />
-            </label>
-            <button className="secondary-button mt-3" type="button" disabled={busy} onClick={onSaveMeetUrl}>
-              <Save size={16} />
-              Save Meet
-            </button>
+        <div className="rounded-lg border border-line bg-stone-50 p-3">
+          <p className="text-sm font-medium text-ink">Meet link</p>
+          {room.meetUrl ? (
+            <p className="mt-2 break-all text-sm text-muted">{room.meetUrl}</p>
+          ) : (
+            <p className="mt-2 text-sm text-muted">No Meet link found in the TeamSpeak room description.</p>
+          )}
+          {room.meetUrl ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a className="secondary-button" href={room.meetUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink size={16} />
+                Open Meet
+              </a>
+              <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(room.meetUrl)}>
+                <Copy size={16} />
+                Copy
+              </button>
+            </div>
+          ) : null}
           </div>
-        ) : null}
 
         <div>
           <div className="mb-2 flex items-center gap-2">

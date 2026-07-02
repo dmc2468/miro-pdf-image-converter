@@ -22,12 +22,15 @@ interface StudioCredentials {
 }
 
 interface TeamSpeakChannel {
+  description?: string;
   id: string;
+  meetUrl?: string;
   name: string;
 }
 
 interface TeamSpeakStatusInput {
   channelName?: string;
+  meetUrl?: string;
   miroBoardUrl?: string;
 }
 
@@ -37,6 +40,7 @@ interface MeetingRoomBoard {
 
 interface MeetingRoom {
   id: string;
+  meetUrl: string;
   miroBoard?: MeetingRoomBoard;
 }
 
@@ -63,6 +67,7 @@ async function main() {
   const clientQuerySettings = await clientQueryConfig();
   const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 1000);
   let lastChannelName: string | undefined;
+  let lastOpenedMeetKey: string | undefined;
   let lastOpenedMiroBoardKey: string | undefined;
   let reportedInitialStatus = false;
 
@@ -71,14 +76,21 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      let studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name });
+      let studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl });
+      const openedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey);
+      if (openedMeetKey) lastOpenedMeetKey = openedMeetKey;
       const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
       if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
-      if (!studioStatus.activeRoomId) lastOpenedMiroBoardKey = undefined;
+      if (!studioStatus.activeRoomId) {
+        lastOpenedMeetKey = undefined;
+        lastOpenedMiroBoardKey = undefined;
+      }
       if (studioStatus.activeRoomId) {
         const miroBoardUrl = await activeMiroBoardUrl();
         if (miroBoardUrl) {
-          studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, miroBoardUrl });
+          studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl, miroBoardUrl });
+          const updatedOpenedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey);
+          if (updatedOpenedMeetKey) lastOpenedMeetKey = updatedOpenedMeetKey;
           const updatedOpenedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
           if (updatedOpenedMiroBoardKey) lastOpenedMiroBoardKey = updatedOpenedMiroBoardKey;
         }
@@ -168,16 +180,27 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
     if (!channelId) {
       throw new Error("TeamSpeak did not return a current channel ID.");
     }
-    const channelResponse = await client.command(`channelvariable cid=${channelId} channel_name`);
+    const channelResponse = await client.command(`channelvariable cid=${channelId} channel_name channel_description`);
     const channelInfo = parseClientQueryLine(channelResponse.find((line) => line.startsWith("cid=")) ?? "");
     const channelName = channelInfo.channel_name;
     if (!channelName) {
       throw new Error("TeamSpeak did not return a current channel name.");
     }
-    return { id: channelId, name: channelName };
+    const description = channelInfo.channel_description;
+    return {
+      id: channelId,
+      description,
+      meetUrl: meetUrlFromDescription(description),
+      name: channelName,
+    };
   } finally {
     client.close();
   }
+}
+
+function meetUrlFromDescription(description: string | undefined): string | undefined {
+  const match = description?.match(/https?:\/\/meet\.google\.com\/[A-Za-z0-9-]+/);
+  return match?.[0];
 }
 
 async function activeMiroBoardUrl(): Promise<string | undefined> {
@@ -245,9 +268,10 @@ function connectClientQuery(config: ClientQueryConfig): Promise<ClientQueryConne
     let buffer = "";
     let pending: ((lines: string[]) => void) | undefined;
     let pendingReject: ((error: Error) => void) | undefined;
+    let ready = false;
 
     socket.setEncoding("utf8");
-    socket.on("connect", () => {
+    function resolveConnection() {
       resolve({
         command(command: string) {
           return new Promise((commandResolve, commandReject) => {
@@ -257,12 +281,19 @@ function connectClientQuery(config: ClientQueryConfig): Promise<ClientQueryConne
           });
         },
         close() {
-          socket.end("quit\n");
+          socket.destroy();
         },
       });
-    });
+    }
     socket.on("data", (chunk: string) => {
       buffer += chunk.replace(/\r/g, "");
+      if (!ready) {
+        if (!buffer.includes("\n")) return;
+        ready = true;
+        buffer = "";
+        resolveConnection();
+        return;
+      }
       if (!buffer.includes("error id=") || !pending) return;
       const lines = buffer.split("\n").map((line) => line.trim()).filter(Boolean);
       buffer = "";
@@ -275,9 +306,17 @@ function connectClientQuery(config: ClientQueryConfig): Promise<ClientQueryConne
       if (pendingReject) {
         pendingReject(error);
         pendingReject = undefined;
+      }
+    });
+    socket.on("close", () => {
+      if (!ready) {
+        reject(new Error("TeamSpeak ClientQuery closed before it was ready."));
         return;
       }
-      reject(error);
+      if (pendingReject) {
+        pendingReject(new Error("TeamSpeak ClientQuery closed before it answered."));
+        pendingReject = undefined;
+      }
     });
   });
 }
@@ -323,6 +362,18 @@ async function updateStudioTeamSpeakStatus(config: StudioConfig, input: TeamSpea
     throw new Error(await apiErrorMessage(response, "Could not update Studio TeamSpeak status."));
   }
   return await response.json() as TeamSpeakStatusResponse;
+}
+
+async function openRoomMeet(status: TeamSpeakStatusResponse, lastOpenedMeetKey: string | undefined): Promise<string | undefined> {
+  if (!status.activeRoomId) return undefined;
+  const room = status.rooms.find((item) => item.id === status.activeRoomId);
+  const meetUrl = room?.meetUrl;
+  if (!meetUrl) return undefined;
+  const meetKey = `${status.activeRoomId}:${meetUrl}`;
+  if (meetKey === lastOpenedMeetKey) return undefined;
+  await openUrl(meetUrl);
+  process.stdout.write(`${new Date().toISOString()} opened ${meetUrl}\n`);
+  return meetKey;
 }
 
 async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined): Promise<string | undefined> {

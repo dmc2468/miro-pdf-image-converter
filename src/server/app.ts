@@ -484,6 +484,9 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
           name: storedUser?.name,
           joinedAt: new Date().toISOString(),
         });
+        if (input.meetUrl) {
+          await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl });
+        }
         if (input.miroBoardUrl) {
           await repositories.meetingRooms.shareBoard(activeRoomId, {
             url: input.miroBoardUrl,
@@ -739,8 +742,19 @@ function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
   }
   return {
     channelName: optionalString(value.channelName),
+    meetUrl: optionalMeetUrl(value.meetUrl),
     miroBoardUrl: optionalMiroBoardUrl(value.miroBoardUrl),
   };
+}
+
+function optionalMeetUrl(value: unknown): string | undefined {
+  const url = optionalExternalUrl(value);
+  if (!url) return undefined;
+  const host = new URL(url).hostname.toLowerCase();
+  if (host !== "meet.google.com") {
+    throw new HttpError(400, "Meet URL must be a meet.google.com link.");
+  }
+  return url;
 }
 
 function optionalMiroBoardUrl(value: unknown): string | undefined {
