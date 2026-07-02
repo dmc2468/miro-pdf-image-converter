@@ -26,6 +26,11 @@ interface TeamSpeakChannel {
   name: string;
 }
 
+interface TeamSpeakStatusInput {
+  channelName?: string;
+  miroBoardUrl?: string;
+}
+
 interface MeetingRoomBoard {
   url: string;
 }
@@ -65,7 +70,10 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, channel.name);
+      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, {
+        channelName: channel.name,
+        miroBoardUrl: await activeMiroBoardUrl(),
+      });
       const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
       if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
       if (!studioStatus.activeRoomId) lastOpenedMiroBoardKey = undefined;
@@ -166,6 +174,60 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
   }
 }
 
+async function activeMiroBoardUrl(): Promise<string | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  const urls = await Promise.all([
+    activeChromiumMiroBoardUrl("Google Chrome"),
+    activeChromiumMiroBoardUrl("Brave Browser"),
+    activeChromiumMiroBoardUrl("Microsoft Edge"),
+    activeChromiumMiroBoardUrl("Arc"),
+    activeSafariMiroBoardUrl(),
+  ]);
+  return urls.find((url) => url !== undefined);
+}
+
+async function activeChromiumMiroBoardUrl(applicationName: string): Promise<string | undefined> {
+  const script = [
+    "tell application \"System Events\"",
+    `if not (exists process "${applicationName}") then return ""`,
+    "end tell",
+    `tell application "${applicationName}"`,
+    "repeat with browserWindow in windows",
+    "set tabUrl to URL of active tab of browserWindow",
+    "if tabUrl contains \"miro.com/app/board/\" then return tabUrl",
+    "end repeat",
+    "end tell",
+    "return \"\"",
+  ];
+  return osascriptMiroBoardUrl(script);
+}
+
+async function activeSafariMiroBoardUrl(): Promise<string | undefined> {
+  const script = [
+    "tell application \"System Events\"",
+    "if not (exists process \"Safari\") then return \"\"",
+    "end tell",
+    "tell application \"Safari\"",
+    "repeat with browserWindow in windows",
+    "set tabUrl to URL of current tab of browserWindow",
+    "if tabUrl contains \"miro.com/app/board/\" then return tabUrl",
+    "end repeat",
+    "end tell",
+    "return \"\"",
+  ];
+  return osascriptMiroBoardUrl(script);
+}
+
+async function osascriptMiroBoardUrl(script: string[]): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("osascript", script.flatMap((line) => ["-e", line]));
+    const url = stdout.trim();
+    return url.includes("miro.com/app/board/") ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 interface ClientQueryConnection {
   command(command: string): Promise<string[]>;
   close(): void;
@@ -242,14 +304,14 @@ function unescapeClientQueryValue(value: string): string {
     .replace(/\\\\/g, "\\");
 }
 
-async function updateStudioTeamSpeakStatus(config: StudioConfig, channelName: string | undefined): Promise<TeamSpeakStatusResponse> {
+async function updateStudioTeamSpeakStatus(config: StudioConfig, input: TeamSpeakStatusInput): Promise<TeamSpeakStatusResponse> {
   const response = await fetch(`${config.baseUrl}/api/meeting-rooms/teamspeak-status`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ channelName }),
+    body: JSON.stringify(input),
   });
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, "Could not update Studio TeamSpeak status."));

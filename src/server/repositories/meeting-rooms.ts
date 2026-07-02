@@ -41,8 +41,6 @@ const seedMeetingRooms: Omit<MeetingRoomRecord, "createdAt" | "updatedAt">[] = [
     participants: [],
   },
 ];
-const EMPTY_ROOM_BOARD_CLEAR_DELAY_MS = 15000;
-
 export function serializeMeetingRoom(room: MeetingRoomRecord): MeetingRoom {
   return {
     ...room,
@@ -86,7 +84,6 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
   }
 
   async list(): Promise<MeetingRoomRecord[]> {
-    await this.clearStaleEmptyRoomBoards();
     return this.collection.find({}).sort({ id: 1 }).toArray();
   }
 
@@ -117,6 +114,9 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
         updatedAt: new Date(),
       },
     };
+    if (!participants.length) {
+      update.$unset = { miroBoard: "" };
+    }
     await this.collection.updateOne(
       { id },
       update,
@@ -132,17 +132,6 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
   async clearBoard(id: MeetingRoomId): Promise<MeetingRoomRecord | null> {
     await this.collection.updateOne({ id }, { $unset: { miroBoard: "" }, $set: { updatedAt: new Date() } });
     return this.findById(id);
-  }
-
-  private async clearStaleEmptyRoomBoards(): Promise<void> {
-    await this.collection.updateMany(
-      {
-        participants: { $size: 0 },
-        miroBoard: { $exists: true },
-        updatedAt: { $lte: new Date(Date.now() - EMPTY_ROOM_BOARD_CLEAR_DELAY_MS) },
-      },
-      { $unset: { miroBoard: "" }, $set: { updatedAt: new Date() } },
-    );
   }
 }
 
@@ -172,7 +161,6 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
   }
 
   async list(): Promise<MeetingRoomRecord[]> {
-    this.clearStaleEmptyRoomBoards();
     return [...this.rooms.values()].sort((left, right) => left.id.localeCompare(right.id));
   }
 
@@ -200,6 +188,9 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
     const room = await this.findById(id);
     if (!room) return null;
     room.participants = room.participants.filter((item) => item.userId !== userId);
+    if (!room.participants.length) {
+      room.miroBoard = undefined;
+    }
     room.updatedAt = new Date();
     return room;
   }
@@ -218,15 +209,5 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
     room.miroBoard = undefined;
     room.updatedAt = new Date();
     return room;
-  }
-
-  private clearStaleEmptyRoomBoards(): void {
-    const cutoff = Date.now() - EMPTY_ROOM_BOARD_CLEAR_DELAY_MS;
-    for (const room of this.rooms.values()) {
-      if (!room.participants.length && room.miroBoard && room.updatedAt.getTime() <= cutoff) {
-        room.miroBoard = undefined;
-        room.updatedAt = new Date();
-      }
-    }
   }
 }

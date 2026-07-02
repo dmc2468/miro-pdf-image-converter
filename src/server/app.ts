@@ -484,6 +484,15 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
           name: storedUser?.name,
           joinedAt: new Date().toISOString(),
         });
+        if (input.miroBoardUrl) {
+          await repositories.meetingRooms.shareBoard(activeRoomId, {
+            url: input.miroBoardUrl,
+            sharedByUserId: user.id,
+            sharedByEmail: user.email,
+            sharedByName: storedUser?.name,
+            sharedAt: new Date().toISOString(),
+          });
+        }
       }
       const rooms = await repositories.meetingRooms.list();
       const teamSpeakBridgeStatuses = await repositories.teamSpeakBridges.list();
@@ -730,7 +739,18 @@ function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
   }
   return {
     channelName: optionalString(value.channelName),
+    miroBoardUrl: optionalMiroBoardUrl(value.miroBoardUrl),
   };
+}
+
+function optionalMiroBoardUrl(value: unknown): string | undefined {
+  const url = optionalExternalUrl(value);
+  if (!url) return undefined;
+  const host = new URL(url).hostname.toLowerCase();
+  if (!host.endsWith("miro.com")) {
+    throw new HttpError(400, "Miro board URL must be a miro.com link.");
+  }
+  return url;
 }
 
 function meetingRoomIdForTeamSpeakChannelName(channelName: string | undefined): MeetingRoomId | undefined {

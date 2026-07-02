@@ -148,6 +148,7 @@ export interface MeetingRoomBoardInput {
 
 export interface TeamSpeakStatusInput {
   channelName?: string;
+  miroBoardUrl?: string;
 }
 
 export interface ApiError {
