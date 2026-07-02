@@ -1073,11 +1073,24 @@ function MiroBoardSharePage({ session, onSessionExpired, embedded = false }: { s
     try {
       const roomsResult = await listMeetingRooms(session.token);
       setRooms(roomsResult.rooms);
-      setSelectedRoomId(roomsResult.rooms[0]?.id ?? "call-hangout-1");
+      const initialRoomId = roomsResult.rooms[0]?.id ?? "call-hangout-1";
+      setSelectedRoomId(initialRoomId);
+      let currentBoardInfo: MiroBoardInfo;
       try {
-        setBoardInfo(await currentMiroBoardInfo());
+        currentBoardInfo = await currentMiroBoardInfo();
+        setBoardInfo(currentBoardInfo);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Miro did not provide the current board.");
+        return;
+      }
+      try {
+        await shareDetectedBoard(currentBoardInfo, initialRoomId, roomsResult.rooms);
+      } catch (error) {
+        if (isUnauthorised(error)) {
+          onSessionExpired();
+          return;
+        }
+        setMessage(error instanceof Error ? error.message : "Could not automatically share the Miro board.");
       }
     } catch (error) {
       if (isUnauthorised(error)) {
@@ -1088,6 +1101,12 @@ function MiroBoardSharePage({ session, onSessionExpired, embedded = false }: { s
     } finally {
       setLoading(false);
     }
+  }
+
+  async function shareDetectedBoard(currentBoardInfo: MiroBoardInfo, roomId: MeetingRoomId, availableRooms: MeetingRoom[]) {
+    await shareMeetingRoomBoard(session.token, roomId, { url: miroBoardUrl(currentBoardInfo.id) });
+    const roomName = availableRooms.find((room) => room.id === roomId)?.name ?? "the selected room";
+    setMessage(`Automatically shared with ${roomName}.`);
   }
 
   async function shareCurrentBoard() {
