@@ -55,6 +55,7 @@ interface ApiErrorResponse {
 
 const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout room 3"]);
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
+const miroDetectionTimeoutMs = 750;
 const execFileAsync = promisify(execFile);
 
 async function main() {
@@ -70,13 +71,18 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, {
-        channelName: channel.name,
-        miroBoardUrl: await activeMiroBoardUrl(),
-      });
+      let studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name });
       const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
       if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
       if (!studioStatus.activeRoomId) lastOpenedMiroBoardKey = undefined;
+      if (studioStatus.activeRoomId) {
+        const miroBoardUrl = await activeMiroBoardUrl();
+        if (miroBoardUrl) {
+          studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, miroBoardUrl });
+          const updatedOpenedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
+          if (updatedOpenedMiroBoardKey) lastOpenedMiroBoardKey = updatedOpenedMiroBoardKey;
+        }
+      }
       if (!reportedInitialStatus || channel.name !== lastChannelName) {
         const status = recognisedChannels.has(channel.name) ? `joined ${channel.name}` : `left hangout rooms from ${channel.name}`;
         process.stdout.write(`${new Date().toISOString()} ${status}\n`);
@@ -176,51 +182,51 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
 
 async function activeMiroBoardUrl(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
-  const urls = await Promise.all([
-    activeChromiumMiroBoardUrl("Google Chrome"),
-    activeChromiumMiroBoardUrl("Brave Browser"),
-    activeChromiumMiroBoardUrl("Microsoft Edge"),
-    activeChromiumMiroBoardUrl("Arc"),
-    activeSafariMiroBoardUrl(),
-  ]);
-  return urls.find((url) => url !== undefined);
+  const applicationName = await frontmostApplicationName();
+  if (!applicationName) return undefined;
+  if (applicationName === "Safari") return activeSafariMiroBoardUrl();
+  if (["Google Chrome", "Brave Browser", "Microsoft Edge", "Arc"].includes(applicationName)) {
+    return activeChromiumMiroBoardUrl(applicationName);
+  }
+  return undefined;
+}
+
+async function frontmostApplicationName(): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      "osascript",
+      ["-e", "tell application \"System Events\" to name of first application process whose frontmost is true"],
+      { timeout: miroDetectionTimeoutMs },
+    );
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function activeChromiumMiroBoardUrl(applicationName: string): Promise<string | undefined> {
   const script = [
-    "tell application \"System Events\"",
-    `if not (exists process "${applicationName}") then return ""`,
-    "end tell",
     `tell application "${applicationName}"`,
-    "repeat with browserWindow in windows",
-    "set tabUrl to URL of active tab of browserWindow",
-    "if tabUrl contains \"miro.com/app/board/\" then return tabUrl",
-    "end repeat",
+    "set tabUrl to URL of active tab of front window",
     "end tell",
-    "return \"\"",
+    "return tabUrl",
   ];
   return osascriptMiroBoardUrl(script);
 }
 
 async function activeSafariMiroBoardUrl(): Promise<string | undefined> {
   const script = [
-    "tell application \"System Events\"",
-    "if not (exists process \"Safari\") then return \"\"",
-    "end tell",
     "tell application \"Safari\"",
-    "repeat with browserWindow in windows",
-    "set tabUrl to URL of current tab of browserWindow",
-    "if tabUrl contains \"miro.com/app/board/\" then return tabUrl",
-    "end repeat",
+    "set tabUrl to URL of current tab of front window",
     "end tell",
-    "return \"\"",
+    "return tabUrl",
   ];
   return osascriptMiroBoardUrl(script);
 }
 
 async function osascriptMiroBoardUrl(script: string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("osascript", script.flatMap((line) => ["-e", line]));
+    const { stdout } = await execFileAsync("osascript", script.flatMap((line) => ["-e", line]), { timeout: miroDetectionTimeoutMs });
     const url = stdout.trim();
     return url.includes("miro.com/app/board/") ? url : undefined;
   } catch {
