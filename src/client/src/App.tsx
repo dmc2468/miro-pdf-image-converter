@@ -36,6 +36,7 @@ const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
 const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
 const TEAM_SPEAK_BRIDGE_INSTALL_COMMAND = `cd /Users/duncanmcleod/Documents/VS_Code_files/SM_PDFConverter
 PATH="/Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" /Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm teamspeak:bridge:install`;
+const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
 type Module = "miro-converter" | "miro-board-share" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
@@ -791,6 +792,8 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
 
 function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom[]; session: UserSession; statuses: TeamSpeakBridgeStatus[] }) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [restartMessage, setRestartMessage] = useState<string | null>(null);
+  const [restartingBridge, setRestartingBridge] = useState(false);
   const currentStatus = statuses.find((status) => status.userId === session.user.id);
   const activeRoom = rooms.find((room) => room.id === currentStatus?.activeRoomId);
   const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
@@ -804,6 +807,20 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
       ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`
       : "Waiting for a local bridge check-in from this Mac.";
   const showInstallPrompt = !isFresh;
+
+  async function restartBridge() {
+    setRestartingBridge(true);
+    setRestartMessage(null);
+    try {
+      const response = await fetch(`${TEAM_SPEAK_BRIDGE_CONTROL_URL}/restart`, { method: "POST" });
+      if (!response.ok) throw new Error("Bridge restart request failed.");
+      setRestartMessage("Restart requested. The bridge should check in again shortly.");
+    } catch {
+      setRestartMessage("Could not reach the local bridge. Use Install TeamSpeak Bridge to copy the setup command.");
+    } finally {
+      setRestartingBridge(false);
+    }
+  }
 
   return (
     <div className="fixed bottom-5 right-5 z-40 w-[min(420px,calc(100vw-2.5rem))] space-y-3">
@@ -840,6 +857,17 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
         <p className="mt-2 text-sm text-ink">
           Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
         </p>
+        {currentStatus && !isFresh ? (
+          <div className="mt-4 rounded-lg border border-line bg-stone-50 p-3">
+            <p className="text-sm font-medium text-ink">Restart TeamSpeak Bridge</p>
+            <p className="mt-1 text-sm text-muted">This asks the installed local bridge to restart itself. No Terminal step is needed while the bridge can still be reached.</p>
+            <button className="mt-3 secondary-button" type="button" disabled={restartingBridge} onClick={() => void restartBridge()}>
+              {restartingBridge ? <RefreshCw className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+              Restart
+            </button>
+            {restartMessage ? <p className="mt-3 rounded-lg border border-line bg-white px-3 py-2 text-xs text-muted">{restartMessage}</p> : null}
+          </div>
+        ) : null}
       </section>
     </div>
   );

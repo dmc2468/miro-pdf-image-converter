@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { meetUrlFromTeamSpeakDescription } from "../src/shared/teamspeak.js";
 
 interface ClientQueryConfig {
   host: string;
@@ -59,6 +61,7 @@ interface ApiErrorResponse {
 
 const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout room 3"]);
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
+const controlPort = 37631;
 const miroDetectionTimeoutMs = 750;
 const execFileAsync = promisify(execFile);
 
@@ -72,6 +75,7 @@ async function main() {
   let reportedInitialStatus = false;
 
   process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
+  startControlServer();
 
   async function tick() {
     try {
@@ -109,6 +113,38 @@ async function main() {
 
   await tick();
   windowlessInterval(tick, intervalMs);
+}
+
+function startControlServer(): void {
+  const server = http.createServer((request, response) => {
+    response.setHeader("Access-Control-Allow-Origin", "*");
+    response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    response.setHeader("Access-Control-Allow-Headers", "content-type");
+    response.setHeader("Access-Control-Max-Age", "86400");
+    if (request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (request.method === "GET" && request.url === "/status") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/restart") {
+      response.writeHead(202, { "content-type": "application/json" });
+      response.end(JSON.stringify({ restarting: true }));
+      setTimeout(() => process.exit(0), 100);
+      return;
+    }
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "Not found" }));
+  });
+  server.on("error", (caught) => {
+    const message = caught instanceof Error ? caught.message : "Unknown bridge control error.";
+    process.stderr.write(`${new Date().toISOString()} ${message}\n`);
+  });
+  server.listen(controlPort, "127.0.0.1");
 }
 
 async function studioConfig(): Promise<StudioConfig> {
@@ -190,17 +226,12 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
     return {
       id: channelId,
       description,
-      meetUrl: meetUrlFromDescription(description),
+      meetUrl: meetUrlFromTeamSpeakDescription(description),
       name: channelName,
     };
   } finally {
     client.close();
   }
-}
-
-function meetUrlFromDescription(description: string | undefined): string | undefined {
-  const match = description?.match(/https?:\/\/meet\.google\.com\/[^\s<>"']+/);
-  return match?.[0]?.replace(/[),.;]+$/, "");
 }
 
 async function activeMiroBoardUrl(): Promise<string | undefined> {
