@@ -32,6 +32,7 @@ import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId
 import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateMeetingRoom, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
+const MIRO_AUTO_SHARE_INTERVAL_MS = 5000;
 const TEAM_SPEAK_BRIDGE_INSTALL_COMMAND = `cd /Users/duncanmcleod/Documents/VS_Code_files/SM_PDFConverter
 PATH="/Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" /Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm teamspeak:bridge:install`;
 
@@ -1049,42 +1050,64 @@ function MiroBoardShareLauncher({ session, onSessionExpired }: { session: UserSe
   const [message, setMessage] = useState("Preparing SM Board Share...");
 
   useEffect(() => {
-    void initialiseMiroLauncher();
-  }, [session]);
+    let cancelled = false;
+    let intervalId: number | undefined;
+    let lastSharedKey: string | undefined;
 
-  async function initialiseMiroLauncher() {
-    try {
-      await promiseWithTimeout(loadMiroSdk(), 10000, "Miro did not finish loading the app SDK. Reload the board and try again.");
-      const miro = (window as MiroWindow).miro;
-      if (!miro?.board?.ui?.on || !miro.board.ui.openPanel) {
-        throw new Error("Miro did not provide the board app launcher. Reload the board after installing the app.");
+    async function initialiseMiroLauncher() {
+      try {
+        await promiseWithTimeout(loadMiroSdk(), 10000, "Miro did not finish loading the app SDK. Reload the board and try again.");
+        const miro = (window as MiroWindow).miro;
+        if (!miro?.board?.ui?.on || !miro.board.ui.openPanel) {
+          throw new Error("Miro did not provide the board app launcher. Reload the board after installing the app.");
+        }
+        const panelUrl = new URL("/miro-board-share-panel", window.location.origin).toString();
+        await Promise.resolve(miro.board.ui.on("icon:click", async () => {
+          await miro.board.ui?.openPanel({ url: panelUrl });
+        }));
+        if (!session) {
+          if (!cancelled) setMessage("SM Board Share is ready.");
+          return;
+        }
+        await shareBoardFromLauncher(session);
+        intervalId = window.setInterval(() => {
+          void shareBoardFromLauncher(session, true).catch((caught: unknown) => {
+            if (isUnauthorised(caught)) {
+              onSessionExpired();
+              return;
+            }
+            if (!cancelled) setMessage(caught instanceof Error ? caught.message : "Could not refresh the current Miro board.");
+          });
+        }, MIRO_AUTO_SHARE_INTERVAL_MS);
+      } catch (caught) {
+        if (isUnauthorised(caught)) {
+          onSessionExpired();
+          return;
+        }
+        if (!cancelled) setMessage(caught instanceof Error ? caught.message : "Could not prepare SM Board Share.");
       }
-      const panelUrl = new URL("/miro-board-share-panel", window.location.origin).toString();
-      await Promise.resolve(miro.board.ui.on("icon:click", async () => {
-        await miro.board.ui?.openPanel({ url: panelUrl });
-      }));
-      if (!session) {
-        setMessage("SM Board Share is ready.");
-        return;
-      }
-      await shareBoardFromLauncher(session);
-    } catch (caught) {
-      if (isUnauthorised(caught)) {
-        onSessionExpired();
-        return;
-      }
-      setMessage(caught instanceof Error ? caught.message : "Could not prepare SM Board Share.");
     }
-  }
 
-  async function shareBoardFromLauncher(currentSession: UserSession) {
-    const roomsResult = await listMeetingRooms(currentSession.token);
-    const roomId = roomsResult.rooms[0]?.id ?? "call-hangout-1";
-    const currentBoardInfo = await currentMiroBoardInfo();
-    await shareMeetingRoomBoard(currentSession.token, roomId, { url: miroBoardUrl(currentBoardInfo.id) });
-    const roomName = roomsResult.rooms.find((room) => room.id === roomId)?.name ?? "the default room";
-    setMessage(`Shared with ${roomName}.`);
-  }
+    async function shareBoardFromLauncher(currentSession: UserSession, quiet = false) {
+      const roomsResult = await listMeetingRooms(currentSession.token);
+      const roomId = activeMeetingRoomId(roomsResult.rooms, roomsResult.teamSpeakBridgeStatuses, currentSession);
+      const currentBoardInfo = await currentMiroBoardInfo();
+      const sharedKey = `${roomId}:${currentBoardInfo.id}`;
+      if (lastSharedKey === sharedKey) return;
+      await shareMeetingRoomBoard(currentSession.token, roomId, { url: miroBoardUrl(currentBoardInfo.id) });
+      lastSharedKey = sharedKey;
+      if (quiet || cancelled) return;
+      const roomName = roomsResult.rooms.find((room) => room.id === roomId)?.name ?? "the default room";
+      setMessage(`Shared with ${roomName}.`);
+    }
+
+    void initialiseMiroLauncher();
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+    };
+  }, [session]);
 
   return (
     <main className="min-h-screen bg-paper px-4 py-5 text-ink">
@@ -1164,7 +1187,7 @@ function MiroBoardSharePage({ session, onSessionExpired, embedded = false }: { s
     try {
       const roomsResult = await listMeetingRooms(session.token);
       setRooms(roomsResult.rooms);
-      const initialRoomId = roomsResult.rooms[0]?.id ?? "call-hangout-1";
+      const initialRoomId = activeMeetingRoomId(roomsResult.rooms, roomsResult.teamSpeakBridgeStatuses, session);
       setSelectedRoomId(initialRoomId);
       let currentBoardInfo: MiroBoardInfo;
       try {
@@ -1331,6 +1354,14 @@ function miroBoardUrl(boardId: string): string {
 
 function boardTitle(board: MiroBoardInfo): string {
   return board.name ?? board.title ?? board.id;
+}
+
+function activeMeetingRoomId(rooms: MeetingRoom[], statuses: TeamSpeakBridgeStatus[], session: UserSession): MeetingRoomId {
+  const status = statuses.find((item) => item.userId === session.user.id);
+  const lastSeenAt = status ? new Date(status.lastSeenAt) : null;
+  const lastSeenAgeMs = lastSeenAt ? Date.now() - lastSeenAt.getTime() : undefined;
+  if (status?.activeRoomId && lastSeenAgeMs !== undefined && lastSeenAgeMs < 30_000) return status.activeRoomId;
+  return rooms[0]?.id ?? "call-hangout-1";
 }
 
 function meetingRoomIds(rooms: MeetingRoom[]): MeetingRoomId[] {
