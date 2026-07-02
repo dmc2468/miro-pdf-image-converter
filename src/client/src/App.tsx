@@ -33,9 +33,10 @@ import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, crea
 
 const SESSION_KEY = "studio-mcleod-session";
 
-type Module = "miro-converter" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
+type Module = "miro-converter" | "miro-board-share" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
 function currentModule(): Module {
+  if (window.location.pathname.startsWith("/miro-board-share-tool")) return "miro-board-share";
   if (window.location.pathname.startsWith("/meeting-rooms")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/voice-commands")) return "voice-commands";
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
@@ -67,6 +68,7 @@ export function App() {
   function navigateTo(module: Module) {
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
+      "miro-board-share": "/miro-board-share-tool",
       "meeting-rooms": "/meeting-rooms",
       "voice-commands": "/voice-commands",
       "admin-users": "/admin/users",
@@ -134,6 +136,8 @@ export function App() {
               <SessionsPanel />
             ) : activeModule === "admin-users" && session.user.role === "admin" ? (
               <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
+            ) : activeModule === "miro-board-share" ? (
+              <MiroBoardSharePage session={session} onSessionExpired={expireSession} embedded />
             ) : activeModule === "meeting-rooms" ? (
               <MeetingRoomsModule session={session} onSessionExpired={expireSession} />
             ) : activeModule === "voice-commands" ? (
@@ -178,12 +182,14 @@ type ModuleItem = {
 
 const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
+  { id: "miro-board-share", label: "Miro board share", icon: MonitorUp },
   { id: "meeting-rooms", label: "Meeting rooms", icon: Video },
   { id: "voice-commands", label: "Vectorworks voice commands", icon: Mic },
 ];
 
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
+  "miro-board-share": "Miro board share",
   "meeting-rooms": "Meeting rooms",
   "voice-commands": "Vectorworks voice commands",
   "admin-users": "User management",
@@ -997,10 +1003,11 @@ function MiroBoardShareAuth({ onSession }: { onSession: (session: UserSession) =
   );
 }
 
-function MiroBoardSharePage({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
+function MiroBoardSharePage({ session, onSessionExpired, embedded = false }: { session: UserSession; onSessionExpired: () => void; embedded?: boolean }) {
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<MeetingRoomId>("call-hangout-1");
   const [boardInfo, setBoardInfo] = useState<MiroBoardInfo | null>(null);
+  const [manualBoardUrl, setManualBoardUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1013,13 +1020,14 @@ function MiroBoardSharePage({ session, onSessionExpired }: { session: UserSessio
     setLoading(true);
     setMessage(null);
     try {
-      const [roomsResult, board] = await Promise.all([
-        listMeetingRooms(session.token),
-        currentMiroBoardInfo(),
-      ]);
+      const roomsResult = await listMeetingRooms(session.token);
       setRooms(roomsResult.rooms);
-      setBoardInfo(board);
       setSelectedRoomId(roomsResult.rooms[0]?.id ?? "call-hangout-1");
+      try {
+        setBoardInfo(await currentMiroBoardInfo());
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Miro did not provide the current board.");
+      }
     } catch (error) {
       if (isUnauthorised(error)) {
         onSessionExpired();
@@ -1032,14 +1040,15 @@ function MiroBoardSharePage({ session, onSessionExpired }: { session: UserSessio
   }
 
   async function shareCurrentBoard() {
-    if (!boardInfo) {
-      setMessage("Miro did not provide the current board.");
+    const boardUrl = boardInfo ? miroBoardUrl(boardInfo.id) : manualBoardUrl.trim();
+    if (!boardUrl) {
+      setMessage("Use the detected board or paste a Miro board URL first.");
       return;
     }
     setBusy(true);
     setMessage(null);
     try {
-      await shareMeetingRoomBoard(session.token, selectedRoomId, { url: miroBoardUrl(boardInfo.id) });
+      await shareMeetingRoomBoard(session.token, selectedRoomId, { url: boardUrl });
       const roomName = rooms.find((room) => room.id === selectedRoomId)?.name ?? "the selected room";
       setMessage(`Shared with ${roomName}.`);
     } catch (error) {
@@ -1053,54 +1062,67 @@ function MiroBoardSharePage({ session, onSessionExpired }: { session: UserSessio
     }
   }
 
+  const content = (
+    <div className={embedded ? "mx-auto w-full max-w-xl px-6 py-6" : "mx-auto max-w-[420px]"}>
+      <div className="mb-5 flex items-center gap-3">
+        {!embedded ? <img src="/logo.jpg" alt="Studio McLeod" className="h-8 w-auto" /> : null}
+        <div>
+          <h1 className={embedded ? "text-lg font-semibold" : "text-base font-semibold"}>Share Miro board</h1>
+          <p className="text-xs text-muted">{session.user.email}</p>
+        </div>
+      </div>
+
+      <section className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        {loading ? (
+          <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
+            <RefreshCw className="animate-spin" size={16} />
+            Loading...
+          </p>
+        ) : (
+          <div className="space-y-5">
+            <div className="rounded-lg border border-line bg-stone-50 p-3">
+              <p className="text-xs font-semibold uppercase text-muted">Current board</p>
+              <p className="mt-1 break-words text-sm font-semibold text-ink">{boardInfo ? boardTitle(boardInfo) : "Unavailable"}</p>
+              {boardInfo ? <p className="mt-1 break-all text-xs text-muted">{miroBoardUrl(boardInfo.id)}</p> : null}
+            </div>
+
+            {!boardInfo ? (
+              <label className="field-label">
+                Miro board URL
+                <input className="field-input" value={manualBoardUrl} placeholder="https://miro.com/app/board/..." onChange={(event) => setManualBoardUrl(event.target.value)} />
+              </label>
+            ) : null}
+
+            <SelectField label="Meeting room" value={selectedRoomId} values={meetingRoomIds(rooms)} onChange={setSelectedRoomId} />
+
+            <button className="primary-button w-full" type="button" disabled={busy || (!boardInfo && !manualBoardUrl.trim()) || rooms.length === 0} onClick={() => void shareCurrentBoard()}>
+              {busy ? <RefreshCw className="animate-spin" size={18} /> : <MonitorUp size={18} />}
+              Share to room
+            </button>
+
+            {message ? <Alert message={message} onDismiss={() => setMessage(null)} /> : null}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  if (embedded) return content;
+
   return (
     <main className="min-h-screen bg-paper px-4 py-5 text-ink">
-      <div className="mx-auto max-w-[420px]">
-        <div className="mb-5 flex items-center gap-3">
-          <img src="/logo.jpg" alt="Studio McLeod" className="h-8 w-auto" />
-          <div>
-            <h1 className="text-base font-semibold">Share Miro board</h1>
-            <p className="text-xs text-muted">{session.user.email}</p>
-          </div>
-        </div>
-
-        <section className="rounded-xl border border-line bg-white p-5 shadow-sm">
-          {loading ? (
-            <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
-              <RefreshCw className="animate-spin" size={16} />
-              Loading...
-            </p>
-          ) : (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-line bg-stone-50 p-3">
-                <p className="text-xs font-semibold uppercase text-muted">Current board</p>
-                <p className="mt-1 break-words text-sm font-semibold text-ink">{boardInfo ? boardTitle(boardInfo) : "Unavailable"}</p>
-                {boardInfo ? <p className="mt-1 break-all text-xs text-muted">{miroBoardUrl(boardInfo.id)}</p> : null}
-              </div>
-
-              <SelectField label="Meeting room" value={selectedRoomId} values={meetingRoomIds(rooms)} onChange={setSelectedRoomId} />
-
-              <button className="primary-button w-full" type="button" disabled={busy || !boardInfo || rooms.length === 0} onClick={() => void shareCurrentBoard()}>
-                {busy ? <RefreshCw className="animate-spin" size={18} /> : <MonitorUp size={18} />}
-                Share to room
-              </button>
-
-              {message ? <Alert message={message} onDismiss={() => setMessage(null)} /> : null}
-            </div>
-          )}
-        </section>
-      </div>
+      {content}
     </main>
   );
 }
 
 async function currentMiroBoardInfo(): Promise<MiroBoardInfo> {
-  await loadMiroSdk();
+  await promiseWithTimeout(loadMiroSdk(), 5000, "Miro did not finish loading the board SDK. Paste the board URL below for this test.");
   const miro = (window as MiroWindow).miro;
   if (!miro?.board?.getInfo) {
-    throw new Error("Open this page from the Studio McLeod app inside Miro.");
+    throw new Error("Miro did not provide the current board. Paste the board URL below for this test.");
   }
-  const info = await miro.board.getInfo();
+  const info = await promiseWithTimeout(miro.board.getInfo(), 5000, "Miro did not return the current board quickly enough. Paste the board URL below for this test.");
   if (!info.id) {
     throw new Error("Miro did not return a board ID.");
   }
@@ -1124,6 +1146,21 @@ function loadMiroSdk(): Promise<void> {
     script.addEventListener("load", () => resolve(), { once: true });
     script.addEventListener("error", () => reject(new Error("Could not load the Miro SDK.")), { once: true });
     document.head.append(script);
+  });
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then((value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      });
   });
 }
 
