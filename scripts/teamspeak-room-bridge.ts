@@ -26,6 +26,20 @@ interface TeamSpeakChannel {
   name: string;
 }
 
+interface MeetingRoomBoard {
+  url: string;
+}
+
+interface MeetingRoom {
+  id: string;
+  miroBoard?: MeetingRoomBoard;
+}
+
+interface TeamSpeakStatusResponse {
+  activeRoomId?: string;
+  rooms: MeetingRoom[];
+}
+
 interface UserSessionResponse {
   token: string;
 }
@@ -43,6 +57,7 @@ async function main() {
   const clientQuerySettings = await clientQueryConfig();
   const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 1000);
   let lastChannelName: string | undefined;
+  let lastOpenedMiroBoardKey: string | undefined;
   let reportedInitialStatus = false;
 
   process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
@@ -50,7 +65,10 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      await updateStudioTeamSpeakStatus(studioSettings, channel.name);
+      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, channel.name);
+      const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
+      if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
+      if (!studioStatus.activeRoomId) lastOpenedMiroBoardKey = undefined;
       if (!reportedInitialStatus || channel.name !== lastChannelName) {
         const status = recognisedChannels.has(channel.name) ? `joined ${channel.name}` : `left hangout rooms from ${channel.name}`;
         process.stdout.write(`${new Date().toISOString()} ${status}\n`);
@@ -224,7 +242,7 @@ function unescapeClientQueryValue(value: string): string {
     .replace(/\\\\/g, "\\");
 }
 
-async function updateStudioTeamSpeakStatus(config: StudioConfig, channelName: string | undefined): Promise<void> {
+async function updateStudioTeamSpeakStatus(config: StudioConfig, channelName: string | undefined): Promise<TeamSpeakStatusResponse> {
   const response = await fetch(`${config.baseUrl}/api/meeting-rooms/teamspeak-status`, {
     method: "POST",
     headers: {
@@ -236,6 +254,31 @@ async function updateStudioTeamSpeakStatus(config: StudioConfig, channelName: st
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, "Could not update Studio TeamSpeak status."));
   }
+  return await response.json() as TeamSpeakStatusResponse;
+}
+
+async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined): Promise<string | undefined> {
+  if (!status.activeRoomId) return undefined;
+  const room = status.rooms.find((item) => item.id === status.activeRoomId);
+  const boardUrl = room?.miroBoard?.url;
+  if (!boardUrl) return undefined;
+  const boardKey = `${status.activeRoomId}:${boardUrl}`;
+  if (boardKey === lastOpenedMiroBoardKey) return undefined;
+  await openUrl(boardUrl);
+  process.stdout.write(`${new Date().toISOString()} opened ${boardUrl}\n`);
+  return boardKey;
+}
+
+async function openUrl(url: string): Promise<void> {
+  if (process.platform === "darwin") {
+    await execFileAsync("open", [url]);
+    return;
+  }
+  if (process.platform === "win32") {
+    await execFileAsync("cmd", ["/c", "start", "", url]);
+    return;
+  }
+  await execFileAsync("xdg-open", [url]);
 }
 
 async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -249,8 +292,13 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 }
 
 function windowlessInterval(callback: () => Promise<void>, intervalMs: number): void {
+  let running = false;
   setInterval(() => {
-    void callback();
+    if (running) return;
+    running = true;
+    void callback().finally(() => {
+      running = false;
+    });
   }, intervalMs);
 }
 
