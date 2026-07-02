@@ -45,7 +45,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   const conversionService = new ConversionService(repositories.jobs, objectStore);
 
   app.set("trust proxy", 1);
-  app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false, frameguard: false }));
   app.use(cors({ origin: config.frontendBaseUrl }));
   app.use(express.json({ limit: "1mb" }));
 
