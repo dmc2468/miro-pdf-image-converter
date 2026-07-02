@@ -99,7 +99,11 @@ export function App() {
     return <MagicLinkPage onSession={storeSession} />;
   }
 
-  if (window.location.pathname.startsWith("/miro-board-share")) {
+  if (window.location.pathname === "/miro-board-share") {
+    return <MiroBoardShareLauncher />;
+  }
+
+  if (window.location.pathname.startsWith("/miro-board-share-panel")) {
     return session ? (
       <MiroBoardSharePage session={session} onSessionExpired={expireSession} />
     ) : (
@@ -947,6 +951,16 @@ interface MiroBoardInfo {
 
 interface MiroBoardApi {
   getInfo(): Promise<MiroBoardInfo>;
+  ui?: MiroBoardUi;
+}
+
+interface MiroBoardUi {
+  on(eventName: "icon:click", handler: () => void | Promise<void>): void | Promise<void>;
+  openPanel(options: MiroPanelOptions): Promise<void>;
+}
+
+interface MiroPanelOptions {
+  url: string;
 }
 
 interface MiroApi {
@@ -955,6 +969,43 @@ interface MiroApi {
 
 interface MiroWindow extends Window {
   miro?: MiroApi;
+}
+
+function MiroBoardShareLauncher() {
+  const [message, setMessage] = useState("Preparing SM Board Share...");
+
+  useEffect(() => {
+    void initialiseMiroLauncher();
+  }, []);
+
+  async function initialiseMiroLauncher() {
+    try {
+      await promiseWithTimeout(loadMiroSdk(), 10000, "Miro did not finish loading the app SDK. Reload the board and try again.");
+      const miro = (window as MiroWindow).miro;
+      if (!miro?.board?.ui?.on || !miro.board.ui.openPanel) {
+        throw new Error("Miro did not provide the board app launcher. Reload the board after installing the app.");
+      }
+      const panelUrl = new URL("/miro-board-share-panel", window.location.origin).toString();
+      await Promise.resolve(miro.board.ui.on("icon:click", async () => {
+        await miro.board.ui?.openPanel({ url: panelUrl });
+      }));
+      setMessage("SM Board Share is ready. Open it from the Miro app icon.");
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "Could not prepare SM Board Share.");
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-paper px-4 py-5 text-ink">
+      <div className="mx-auto max-w-[380px]">
+        <img src="/logo.jpg" alt="Studio McLeod" className="mb-5 h-8 w-auto" />
+        <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          <h1 className="text-base font-semibold">SM Board Share</h1>
+          <p className="mt-2 text-sm text-muted">{message}</p>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 function MiroBoardShareAuth({ onSession }: { onSession: (session: UserSession) => void }) {
