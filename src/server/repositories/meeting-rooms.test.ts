@@ -53,4 +53,14 @@ describe("MemoryMeetingRoomRepository", () => {
     expect(room?.participants.map((participant) => participant.userId)).toEqual(["user-2"]);
     expect(room?.miroBoard?.url).toBe("https://miro.com/app/board/uXjVPVbwt10=/");
   });
+
+  it("clears a Meet link when the TeamSpeak description no longer has one", async () => {
+    const repository = new MemoryMeetingRoomRepository();
+    await repository.seedDefaults();
+    await repository.update("call-hangout-1", { meetUrl: "https://meet.google.com/aaa-bbbb-ccc" });
+
+    const room = await repository.update("call-hangout-1", { meetUrl: "" });
+
+    expect(room?.meetUrl).toBe("");
+  });
 });

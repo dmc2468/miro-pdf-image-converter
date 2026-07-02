@@ -484,8 +484,8 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
           name: storedUser?.name,
           joinedAt: new Date().toISOString(),
         });
-        if (input.meetUrl) {
-          await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl });
+        if (input.meetUrl !== undefined) {
+          await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl ?? "" });
         }
         if (input.miroBoardUrl) {
           await repositories.meetingRooms.shareBoard(activeRoomId, {
@@ -736,7 +736,7 @@ function parseMeetingRoomBoardInput(value: unknown): MeetingRoomBoardInput {
   return { url };
 }
 
-function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
+export function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
   if (!isObjectRecord(value)) {
     throw new HttpError(400, "TeamSpeak status must be an object.");
   }
@@ -747,7 +747,8 @@ function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput {
   };
 }
 
-function optionalMeetUrl(value: unknown): string | undefined {
+function optionalMeetUrl(value: unknown): string | null | undefined {
+  if (value === null) return null;
   const url = optionalExternalUrl(value);
   if (!url) return undefined;
   const host = new URL(url).hostname.toLowerCase();
