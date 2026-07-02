@@ -100,7 +100,7 @@ export function App() {
   }
 
   if (window.location.pathname === "/miro-board-share") {
-    return <MiroBoardShareLauncher />;
+    return <MiroBoardShareLauncher session={session} onSessionExpired={expireSession} />;
   }
 
   if (window.location.pathname.startsWith("/miro-board-share-panel")) {
@@ -971,12 +971,12 @@ interface MiroWindow extends Window {
   miro?: MiroApi;
 }
 
-function MiroBoardShareLauncher() {
+function MiroBoardShareLauncher({ session, onSessionExpired }: { session: UserSession | null; onSessionExpired: () => void }) {
   const [message, setMessage] = useState("Preparing SM Board Share...");
 
   useEffect(() => {
     void initialiseMiroLauncher();
-  }, []);
+  }, [session]);
 
   async function initialiseMiroLauncher() {
     try {
@@ -989,10 +989,27 @@ function MiroBoardShareLauncher() {
       await Promise.resolve(miro.board.ui.on("icon:click", async () => {
         await miro.board.ui?.openPanel({ url: panelUrl });
       }));
-      setMessage("SM Board Share is ready. Open it from the Miro app icon.");
+      if (!session) {
+        setMessage("SM Board Share is ready.");
+        return;
+      }
+      await shareBoardFromLauncher(session);
     } catch (caught) {
+      if (isUnauthorised(caught)) {
+        onSessionExpired();
+        return;
+      }
       setMessage(caught instanceof Error ? caught.message : "Could not prepare SM Board Share.");
     }
+  }
+
+  async function shareBoardFromLauncher(currentSession: UserSession) {
+    const roomsResult = await listMeetingRooms(currentSession.token);
+    const roomId = roomsResult.rooms[0]?.id ?? "call-hangout-1";
+    const currentBoardInfo = await currentMiroBoardInfo();
+    await shareMeetingRoomBoard(currentSession.token, roomId, { url: miroBoardUrl(currentBoardInfo.id) });
+    const roomName = roomsResult.rooms.find((room) => room.id === roomId)?.name ?? "the default room";
+    setMessage(`Shared with ${roomName}.`);
   }
 
   return (
