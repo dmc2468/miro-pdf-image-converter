@@ -1,4 +1,4 @@
-import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, TeamSpeakStatusInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
+import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, MeetingRoomsResponse, TeamSpeakStatusInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -220,8 +220,8 @@ export function runVoiceCommand(token: string, commandId: string, dryRun: boolea
   });
 }
 
-export function listMeetingRooms(token: string): Promise<{ rooms: MeetingRoom[] }> {
-  return apiFetch<{ rooms: MeetingRoom[] }>("/api/meeting-rooms", { token });
+export function listMeetingRooms(token: string): Promise<MeetingRoomsResponse> {
+  return apiFetch<MeetingRoomsResponse>("/api/meeting-rooms", { token });
 }
 
 export function updateMeetingRoom(token: string, roomId: MeetingRoomId, input: MeetingRoomInput): Promise<{ room: MeetingRoom }> {
@@ -246,8 +246,8 @@ export function leaveMeetingRoom(token: string, roomId: MeetingRoomId): Promise<
   });
 }
 
-export function updateTeamSpeakStatus(token: string, input: TeamSpeakStatusInput): Promise<{ activeRoomId?: MeetingRoomId; rooms: MeetingRoom[] }> {
-  return apiFetch<{ activeRoomId?: MeetingRoomId; rooms: MeetingRoom[] }>("/api/meeting-rooms/teamspeak-status", {
+export function updateTeamSpeakStatus(token: string, input: TeamSpeakStatusInput): Promise<MeetingRoomsResponse & { activeRoomId?: MeetingRoomId }> {
+  return apiFetch<MeetingRoomsResponse & { activeRoomId?: MeetingRoomId }>("/api/meeting-rooms/teamspeak-status", {
     method: "POST",
     token,
     body: JSON.stringify(input),

@@ -50,12 +50,11 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      const channelName = recognisedChannels.has(channel.name) ? channel.name : undefined;
-      if (!reportedInitialStatus || channelName !== lastChannelName) {
-        await updateStudioTeamSpeakStatus(studioSettings, channelName);
-        const status = channelName ? `joined ${channelName}` : `left hangout rooms from ${channel.name}`;
+      if (!reportedInitialStatus || channel.name !== lastChannelName) {
+        await updateStudioTeamSpeakStatus(studioSettings, channel.name);
+        const status = recognisedChannels.has(channel.name) ? `joined ${channel.name}` : `left hangout rooms from ${channel.name}`;
         process.stdout.write(`${new Date().toISOString()} ${status}\n`);
-        lastChannelName = channelName;
+        lastChannelName = channel.name;
         reportedInitialStatus = true;
       }
     } catch (caught) {

@@ -28,10 +28,12 @@ import {
   X,
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
-import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
+import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, TeamSpeakBridgeStatus, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
 import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateMeetingRoom, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
+const TEAM_SPEAK_BRIDGE_INSTALL_COMMAND = `cd /Users/duncanmcleod/Documents/VS_Code_files/SM_PDFConverter
+PATH="/Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" /Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm teamspeak:bridge:install`;
 
 type Module = "miro-converter" | "miro-board-share" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
@@ -629,6 +631,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
 
 function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
+  const [teamSpeakBridgeStatuses, setTeamSpeakBridgeStatuses] = useState<TeamSpeakBridgeStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [miroDrafts, setMiroDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
@@ -647,6 +650,7 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
     try {
       const result = await listMeetingRooms(session.token);
       setRooms(result.rooms);
+      setTeamSpeakBridgeStatuses(result.teamSpeakBridgeStatuses ?? []);
       setMeetDrafts((current) => {
         const next = { ...current };
         result.rooms.forEach((room) => {
@@ -786,29 +790,80 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
           Loading...
         </p>
       ) : (
-        <section className="grid gap-5 xl:grid-cols-3">
-          {rooms.map((room) => (
-            <MeetingRoomCard
-              busy={busyRoomId === room.id}
-              isAdmin={isAdmin}
-              meetDraft={meetDrafts[room.id] ?? ""}
-              miroDraft={miroDrafts[room.id] ?? ""}
-              room={room}
-              session={session}
-              key={room.id}
-              onClearBoard={() => void clearBoard(room)}
-              onJoin={() => void joinRoom(room)}
-              onLeave={() => void leaveRoom(room)}
-              onMeetDraft={(value) => setMeetDrafts((current) => ({ ...current, [room.id]: value }))}
-              onMiroDraft={(value) => setMiroDrafts((current) => ({ ...current, [room.id]: value }))}
-              onSaveMeetUrl={() => void saveMeetUrl(room)}
-              onShareBoard={() => void shareBoard(room)}
-            />
-          ))}
-        </section>
+        <>
+          <TeamSpeakBridgePanel rooms={rooms} session={session} statuses={teamSpeakBridgeStatuses} />
+          <section className="grid gap-5 xl:grid-cols-3">
+            {rooms.map((room) => (
+              <MeetingRoomCard
+                busy={busyRoomId === room.id}
+                isAdmin={isAdmin}
+                meetDraft={meetDrafts[room.id] ?? ""}
+                miroDraft={miroDrafts[room.id] ?? ""}
+                room={room}
+                session={session}
+                key={room.id}
+                onClearBoard={() => void clearBoard(room)}
+                onJoin={() => void joinRoom(room)}
+                onLeave={() => void leaveRoom(room)}
+                onMeetDraft={(value) => setMeetDrafts((current) => ({ ...current, [room.id]: value }))}
+                onMiroDraft={(value) => setMiroDrafts((current) => ({ ...current, [room.id]: value }))}
+                onSaveMeetUrl={() => void saveMeetUrl(room)}
+                onShareBoard={() => void shareBoard(room)}
+              />
+            ))}
+          </section>
+        </>
       )}
     </div>
   );
+}
+
+function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom[]; session: UserSession; statuses: TeamSpeakBridgeStatus[] }) {
+  const currentStatus = statuses.find((status) => status.userId === session.user.id);
+  const activeRoom = rooms.find((room) => room.id === currentStatus?.activeRoomId);
+  const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
+  const lastSeenAgeMs = lastSeenAt ? Date.now() - lastSeenAt.getTime() : undefined;
+  const isFresh = lastSeenAgeMs !== undefined && lastSeenAgeMs < 30_000;
+  const statusLabel = !currentStatus ? "Not set up" : isFresh ? "Running" : "Needs attention";
+  const statusClassName = !currentStatus ? "status status-pending" : isFresh ? "status status-completed" : "status status-failed";
+  const detail = !currentStatus
+    ? "Install the local bridge once on this Mac to let TeamSpeak update your room automatically."
+    : isFresh
+      ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
+      : `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`;
+
+  return (
+    <section className="mb-5 rounded-xl border border-line bg-white px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-ink">TeamSpeak bridge</h3>
+            <span className={statusClassName}>{statusLabel}</span>
+          </div>
+          <p className="mt-1 text-sm text-muted">{detail}</p>
+          <p className="mt-2 text-sm text-ink">
+            Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
+          </p>
+        </div>
+        <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND)}>
+          <Copy size={16} />
+          Copy setup
+        </button>
+      </div>
+      <pre className="mt-4 overflow-x-auto rounded-lg border border-line bg-stone-50 p-3 text-xs text-ink">{TEAM_SPEAK_BRIDGE_INSTALL_COMMAND}</pre>
+    </section>
+  );
+}
+
+function relativeBridgeTime(ageMs: number): string {
+  const seconds = Math.max(0, Math.floor(ageMs / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds} seconds ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes === 1) return "1 minute ago";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
 }
 
 function MeetingRoomCard({

@@ -20,6 +20,7 @@ import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
 import { loadSessions } from "./sessions.js";
 import { serializeMeetingRoom } from "./repositories/meeting-rooms.js";
+import { serializeTeamSpeakBridgeStatus } from "./repositories/teamspeak-bridges.js";
 import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
 
 const execFileAsync = promisify(execFile);
@@ -403,7 +404,11 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   app.get("/api/meeting-rooms", requireAuth, async (_request, response, next) => {
     try {
       const rooms = await repositories.meetingRooms.list();
-      response.json({ rooms: rooms.map(serializeMeetingRoom) });
+      const teamSpeakBridgeStatuses = await repositories.teamSpeakBridges.list();
+      response.json({
+        rooms: rooms.map(serializeMeetingRoom),
+        teamSpeakBridgeStatuses: teamSpeakBridgeStatuses.map(serializeTeamSpeakBridgeStatus),
+      });
     } catch (error) {
       next(error);
     }
@@ -461,6 +466,13 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       const storedUser = await repositories.users.findById(user.id);
       const input = parseTeamSpeakStatusInput(request.body);
       const activeRoomId = meetingRoomIdForTeamSpeakChannelName(input.channelName);
+      await repositories.teamSpeakBridges.update({
+        userId: user.id,
+        email: user.email,
+        name: storedUser?.name,
+        channelName: input.channelName,
+        activeRoomId,
+      });
       const roomIds: MeetingRoomId[] = ["call-hangout-1", "call-hangout-2", "call-hangout-3"];
       for (const roomId of roomIds.filter((item) => item !== activeRoomId)) {
         await repositories.meetingRooms.leave(roomId, user.id);
@@ -474,7 +486,12 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
         });
       }
       const rooms = await repositories.meetingRooms.list();
-      response.json({ activeRoomId, rooms: rooms.map(serializeMeetingRoom) });
+      const teamSpeakBridgeStatuses = await repositories.teamSpeakBridges.list();
+      response.json({
+        activeRoomId,
+        rooms: rooms.map(serializeMeetingRoom),
+        teamSpeakBridgeStatuses: teamSpeakBridgeStatuses.map(serializeTeamSpeakBridgeStatus),
+      });
     } catch (error) {
       next(error);
     }

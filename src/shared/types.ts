@@ -124,6 +124,20 @@ export interface MeetingRoom {
   updatedAt?: string;
 }
 
+export interface TeamSpeakBridgeStatus {
+  userId: string;
+  email: string;
+  name?: string;
+  channelName?: string;
+  activeRoomId?: MeetingRoomId;
+  lastSeenAt: string;
+}
+
+export interface MeetingRoomsResponse {
+  rooms: MeetingRoom[];
+  teamSpeakBridgeStatuses: TeamSpeakBridgeStatus[];
+}
+
 export interface MeetingRoomInput {
   meetUrl: string;
 }
