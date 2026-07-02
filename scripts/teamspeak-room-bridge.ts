@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 interface ClientQueryConfig {
   host: string;
@@ -12,6 +14,11 @@ interface ClientQueryConfig {
 interface StudioConfig {
   baseUrl: string;
   token: string;
+}
+
+interface StudioCredentials {
+  email: string;
+  password: string;
 }
 
 interface TeamSpeakChannel {
@@ -28,6 +35,8 @@ interface ApiErrorResponse {
 }
 
 const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout room 3"]);
+const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
+const execFileAsync = promisify(execFile);
 
 async function main() {
   const studioSettings = await studioConfig();
@@ -66,21 +75,39 @@ async function studioConfig(): Promise<StudioConfig> {
 }
 
 async function studioToken(baseUrl: string): Promise<string> {
-  const email = process.env.STUDIO_MCLEOD_EMAIL;
-  const password = process.env.STUDIO_MCLEOD_PASSWORD;
-  if (!email || !password) {
+  const credentials = await studioCredentials();
+  if (!credentials) {
     throw new Error("Set STUDIO_MCLEOD_TOKEN or STUDIO_MCLEOD_EMAIL and STUDIO_MCLEOD_PASSWORD.");
   }
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(credentials),
   });
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, "Studio login failed."));
   }
   const body = await response.json() as UserSessionResponse;
   return body.token;
+}
+
+async function studioCredentials(): Promise<StudioCredentials | undefined> {
+  const email = process.env.STUDIO_MCLEOD_EMAIL;
+  const password = process.env.STUDIO_MCLEOD_PASSWORD;
+  if (!email) return undefined;
+  if (password) return { email, password };
+  const keychainPassword = await keychainStudioPassword(email);
+  return keychainPassword ? { email, password: keychainPassword } : undefined;
+}
+
+async function keychainStudioPassword(email: string): Promise<string | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  try {
+    const { stdout } = await execFileAsync("security", ["find-generic-password", "-s", studioKeychainService, "-a", email, "-w"]);
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function clientQueryConfig(): Promise<ClientQueryConfig> {

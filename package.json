@@ -15,6 +15,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
     "teamspeak:bridge": "tsx scripts/teamspeak-room-bridge.ts",
+    "teamspeak:bridge:install": "tsx scripts/install-teamspeak-room-bridge.ts",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit"
   },
