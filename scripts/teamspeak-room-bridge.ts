@@ -50,8 +50,8 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
+      await updateStudioTeamSpeakStatus(studioSettings, channel.name);
       if (!reportedInitialStatus || channel.name !== lastChannelName) {
-        await updateStudioTeamSpeakStatus(studioSettings, channel.name);
         const status = recognisedChannels.has(channel.name) ? `joined ${channel.name}` : `left hangout rooms from ${channel.name}`;
         process.stdout.write(`${new Date().toISOString()} ${status}\n`);
         lastChannelName = channel.name;
