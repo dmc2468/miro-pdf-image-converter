@@ -819,6 +819,7 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
 }
 
 function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom[]; session: UserSession; statuses: TeamSpeakBridgeStatus[] }) {
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const currentStatus = statuses.find((status) => status.userId === session.user.id);
   const activeRoom = rooms.find((room) => room.id === currentStatus?.activeRoomId);
   const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
@@ -845,12 +846,20 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
             Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
           </p>
         </div>
-        <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND)}>
+        <button
+          className="secondary-button"
+          type="button"
+          title="Copies a Terminal command."
+          onClick={() => {
+            void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND);
+            setCopyMessage("Copied. Paste into Terminal and press Return.");
+          }}
+        >
           <Copy size={16} />
-          Copy setup
+          Install TeamSpeak Bridge
         </button>
       </div>
-      <pre className="mt-4 overflow-x-auto rounded-lg border border-line bg-stone-50 p-3 text-xs text-ink">{TEAM_SPEAK_BRIDGE_INSTALL_COMMAND}</pre>
+      {copyMessage ? <p className="mt-3 text-xs text-muted">{copyMessage}</p> : null}
     </section>
   );
 }
