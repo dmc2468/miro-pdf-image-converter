@@ -41,7 +41,7 @@ const execFileAsync = promisify(execFile);
 async function main() {
   const studioSettings = await studioConfig();
   const clientQuerySettings = await clientQueryConfig();
-  const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 2500);
+  const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 1000);
   let lastChannelName: string | undefined;
   let reportedInitialStatus = false;
 

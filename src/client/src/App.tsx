@@ -32,8 +32,8 @@ import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId
 import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateMeetingRoom, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
-const MEETING_ROOMS_REFRESH_INTERVAL_MS = 3000;
-const MIRO_AUTO_SHARE_INTERVAL_MS = 2500;
+const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
+const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
 const TEAM_SPEAK_BRIDGE_INSTALL_COMMAND = `cd /Users/duncanmcleod/Documents/VS_Code_files/SM_PDFConverter
 PATH="/Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" /Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm teamspeak:bridge:install`;
 
