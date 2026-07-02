@@ -825,42 +825,52 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
   const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
   const lastSeenAgeMs = lastSeenAt ? Date.now() - lastSeenAt.getTime() : undefined;
   const isFresh = lastSeenAgeMs !== undefined && lastSeenAgeMs < 30_000;
-  const statusLabel = !currentStatus ? "Not set up" : isFresh ? "Running" : "Needs attention";
-  const statusClassName = !currentStatus ? "status status-pending" : isFresh ? "status status-completed" : "status status-failed";
-  const detail = !currentStatus
-    ? "Install the local bridge once on this Mac to let TeamSpeak update your room automatically."
-    : isFresh
-      ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
-      : `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`;
+  const statusLabel = isFresh ? "Running" : currentStatus ? "Needs attention" : "Not set up";
+  const statusClassName = isFresh ? "status status-completed" : currentStatus ? "status status-failed" : "status status-pending";
+  const statusDetail = isFresh
+    ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
+    : currentStatus
+      ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`
+      : "Waiting for a local bridge check-in from this Mac.";
+  const showInstallPrompt = !isFresh;
 
   return (
-    <section className="mb-5 rounded-xl border border-line bg-white px-5 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-ink">TeamSpeak bridge</h3>
-            <span className={statusClassName}>{statusLabel}</span>
+    <div className="fixed bottom-5 right-5 z-40 w-[min(420px,calc(100vw-2.5rem))] space-y-3">
+      {showInstallPrompt ? (
+        <section className="rounded-xl border border-line bg-white px-5 py-4 shadow-lg">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Install TeamSpeak Bridge</h3>
+              <p className="mt-1 text-sm text-muted">Install the local bridge once on this Mac to let TeamSpeak update your room automatically.</p>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              title="Copies a Terminal command."
+              onClick={() => {
+                void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND);
+                setCopyMessage("Copied. Paste into Terminal and press Return.");
+              }}
+            >
+              <Copy size={16} />
+              Copy
+            </button>
           </div>
-          <p className="mt-1 text-sm text-muted">{detail}</p>
-          <p className="mt-2 text-sm text-ink">
-            Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
-          </p>
+          {copyMessage ? <p className="mt-3 rounded-lg border border-line bg-stone-50 px-3 py-2 text-xs text-muted">{copyMessage}</p> : null}
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-line bg-white px-5 py-4 shadow-lg">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-ink">TeamSpeak bridge</h3>
+          <span className={statusClassName}>{statusLabel}</span>
         </div>
-        <button
-          className="secondary-button"
-          type="button"
-          title="Copies a Terminal command."
-          onClick={() => {
-            void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND);
-            setCopyMessage("Copied. Paste into Terminal and press Return.");
-          }}
-        >
-          <Copy size={16} />
-          Install TeamSpeak Bridge
-        </button>
-      </div>
-      {copyMessage ? <p className="mt-3 text-xs text-muted">{copyMessage}</p> : null}
-    </section>
+        <p className="mt-1 text-sm text-muted">{statusDetail}</p>
+        <p className="mt-2 text-sm text-ink">
+          Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
+        </p>
+      </section>
+    </div>
   );
 }
 
