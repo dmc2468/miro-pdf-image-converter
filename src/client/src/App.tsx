@@ -37,10 +37,10 @@ const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
 const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
 const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
-type Module = "miro-converter" | "miro-board-share" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
+type Module = "miro-converter" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
 function currentModule(): Module {
-  if (window.location.pathname.startsWith("/miro-board-share-tool")) return "miro-board-share";
+  if (window.location.pathname.startsWith("/miro-board-share-tool")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/meeting-rooms")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/voice-commands")) return "voice-commands";
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
@@ -80,7 +80,6 @@ export function App() {
   function navigateTo(module: Module) {
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
-      "miro-board-share": "/miro-board-share-tool",
       "meeting-rooms": "/meeting-rooms",
       "voice-commands": "/voice-commands",
       "admin-users": "/admin/users",
@@ -152,8 +151,6 @@ export function App() {
               <SessionsPanel />
             ) : activeModule === "admin-users" && session.user.role === "admin" ? (
               <AdminUsersPanel token={session.token} currentUserId={session.user.id} onSessionExpired={expireSession} />
-            ) : activeModule === "miro-board-share" ? (
-              <MiroBoardSharePage session={session} onSessionExpired={expireSession} embedded />
             ) : activeModule === "meeting-rooms" ? (
               <MeetingRoomsModule session={session} onSessionExpired={expireSession} />
             ) : activeModule === "voice-commands" ? (
@@ -198,7 +195,6 @@ type ModuleItem = {
 
 const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
-  { id: "miro-board-share", label: "Miro board share", icon: MonitorUp },
   { id: "meeting-rooms", label: "Meeting rooms", icon: Video },
   { id: "voice-commands", label: "Vectorworks voice commands", icon: Mic },
 ];
@@ -235,7 +231,6 @@ function SidebarNavButton({
 
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
-  "miro-board-share": "Miro board share",
   "meeting-rooms": "Meeting rooms",
   "voice-commands": "Vectorworks voice commands",
   "admin-users": "User management",
@@ -626,7 +621,6 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
   const [teamSpeakBridgeStatuses, setTeamSpeakBridgeStatuses] = useState<TeamSpeakBridgeStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const [miroDrafts, setMiroDrafts] = useState<Partial<Record<MeetingRoomId, string>>>({});
   const [busyRoomId, setBusyRoomId] = useState<MeetingRoomId | null>(null);
 
   useEffect(() => {
@@ -693,30 +687,6 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
     }
   }
 
-  async function shareBoard(room: MeetingRoom) {
-    const url = miroDrafts[room.id]?.trim();
-    if (!url) {
-      setMessage("Paste a Miro board URL first.");
-      return;
-    }
-    setBusyRoomId(room.id);
-    setMessage(null);
-    try {
-      const result = await shareMeetingRoomBoard(session.token, room.id, { url });
-      replaceRoom(result.room);
-      setMiroDrafts((current) => ({ ...current, [room.id]: "" }));
-      setMessage("Miro board shared with the room.");
-    } catch (error) {
-      if (isUnauthorised(error)) {
-        onSessionExpired();
-        return;
-      }
-      setMessage(error instanceof Error ? error.message : "Could not share Miro board.");
-    } finally {
-      setBusyRoomId(null);
-    }
-  }
-
   async function clearBoard(room: MeetingRoom) {
     setBusyRoomId(room.id);
     setMessage(null);
@@ -736,11 +706,11 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-6">
+    <div className="mx-auto w-full max-w-7xl px-6 pb-56 pt-6">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-ink">Meeting rooms</h2>
-          <p className="text-sm text-muted">Join TeamSpeak hangouts, launch Meet, and share the active Miro board for the room.</p>
+          <p className="text-sm text-muted">Dashboard for Teamspeak, Meet and Miro board details for Hangout room automation</p>
         </div>
         <button className="icon-only" type="button" title="Refresh rooms" onClick={() => void refreshRooms()}>
           <RefreshCw size={17} />
@@ -761,15 +731,12 @@ function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSessio
             {rooms.map((room) => (
               <MeetingRoomCard
                 busy={busyRoomId === room.id}
-                miroDraft={miroDrafts[room.id] ?? ""}
                 room={room}
                 session={session}
                 key={room.id}
                 onClearBoard={() => void clearBoard(room)}
                 onJoin={() => void joinRoom(room)}
                 onLeave={() => void leaveRoom(room)}
-                onMiroDraft={(value) => setMiroDrafts((current) => ({ ...current, [room.id]: value }))}
-                onShareBoard={() => void shareBoard(room)}
               />
             ))}
           </section>
@@ -807,9 +774,10 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 w-[min(420px,calc(100vw-2.5rem))] space-y-3">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper/95 px-4 py-3 shadow-[0_-8px_24px_rgba(30,27,24,0.08)] backdrop-blur lg:left-64">
+      <div className="mx-auto grid w-full max-w-7xl gap-3 lg:grid-cols-[minmax(260px,0.85fr)_minmax(0,1.4fr)]">
       {showInstallPrompt ? (
-        <section className="rounded-xl border border-line bg-white px-5 py-4 shadow-lg">
+        <section className="rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-ink">{needsUpdate ? "Update TeamSpeak Bridge" : "Install TeamSpeak Bridge"}</h3>
@@ -832,18 +800,15 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-line bg-white px-5 py-4 shadow-lg">
-        <div className="flex flex-wrap items-center gap-2">
+      <section className={`rounded-xl border border-line bg-white px-5 py-4 shadow-sm ${showInstallPrompt ? "" : "lg:col-span-2"}`}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h3 className="text-sm font-semibold text-ink">TeamSpeak bridge</h3>
           <span className={statusClassName}>{statusLabel}</span>
+          <span className="text-sm text-muted">{statusDetail}</span>
         </div>
-        <p className="mt-1 text-sm text-muted">{statusDetail}</p>
-        <p className="mt-2 text-sm text-ink">
-          Current room: <span className="font-semibold">{currentBridge?.roomLabel ?? "Not detected"}</span>
-        </p>
         <div className="mt-4 border-t border-line pt-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bridge check-ins</p>
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {statuses.length ? statuses.map((status) => {
               const view = bridgeStatusView(status, rooms);
               return (
@@ -852,7 +817,6 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
                     <p className="text-sm font-medium text-ink">{status.name ?? status.email}</p>
                     <span className={view.className}>{view.label}</span>
                   </div>
-                  <p className="mt-1 text-xs text-muted">{status.email}</p>
                   <p className="mt-1 text-xs text-muted">Room: <span className="font-medium text-ink">{view.roomLabel}</span></p>
                   <p className="mt-1 text-xs text-muted">{view.detail}</p>
                 </div>
@@ -872,6 +836,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
           </div>
         ) : null}
       </section>
+      </div>
     </div>
   );
 }
@@ -944,24 +909,18 @@ function relativeBridgeTime(ageMs: number): string {
 
 function MeetingRoomCard({
   busy,
-  miroDraft,
   room,
   session,
   onClearBoard,
   onJoin,
   onLeave,
-  onMiroDraft,
-  onShareBoard,
 }: {
   busy: boolean;
-  miroDraft: string;
   room: MeetingRoom;
   session: UserSession;
   onClearBoard: () => void;
   onJoin: () => void;
   onLeave: () => void;
-  onMiroDraft: (value: string) => void;
-  onShareBoard: () => void;
 }) {
   const joined = room.participants.some((participant) => participant.userId === session.user.id);
 
@@ -971,7 +930,6 @@ function MeetingRoomCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-ink">{room.name}</h3>
-            <p className="mt-1 text-xs text-muted">{room.teamspeakChannelName}</p>
           </div>
           <span className="status status-processing">{room.participants.length}</span>
         </div>
@@ -1028,10 +986,10 @@ function MeetingRoomCard({
               <p className="mt-2 text-xs text-muted">
                 Shared by {room.miroBoard.sharedByName ?? room.miroBoard.sharedByEmail} · {new Date(room.miroBoard.sharedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-nowrap gap-2">
                 <a className="secondary-button" href={room.miroBoard.url} target="_blank" rel="noopener noreferrer">
                   <ExternalLink size={16} />
-                  Open Miro
+                  Open
                 </a>
                 <button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(room.miroBoard?.url ?? "")}>
                   <Copy size={16} />
@@ -1045,13 +1003,6 @@ function MeetingRoomCard({
           ) : (
             <p className="rounded-lg border border-line bg-stone-50 px-3 py-4 text-sm text-muted">No board shared yet.</p>
           )}
-        </div>
-
-        <div className="flex gap-2">
-          <input className="field-input mt-0" value={miroDraft} placeholder="https://miro.com/app/board/..." onChange={(event) => onMiroDraft(event.target.value)} />
-          <button className="secondary-button h-11 shrink-0" type="button" disabled={busy || !miroDraft.trim()} onClick={onShareBoard}>
-            Share
-          </button>
         </div>
 
         <div>
