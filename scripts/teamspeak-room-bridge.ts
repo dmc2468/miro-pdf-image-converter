@@ -63,6 +63,7 @@ const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
 const miroDetectionTimeoutMs = 750;
+const rememberedMiroBoardMs = 120_000;
 const execFileAsync = promisify(execFile);
 
 async function main() {
@@ -70,6 +71,8 @@ async function main() {
   const clientQuerySettings = await clientQueryConfig();
   const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 1000);
   let lastChannelName: string | undefined;
+  let lastDetectedMiroBoardAt = 0;
+  let lastDetectedMiroBoardUrl: string | undefined;
   let lastOpenedMeetKey: string | undefined;
   let lastOpenedMiroBoardKey: string | undefined;
   let reportedInitialStatus = false;
@@ -80,7 +83,14 @@ async function main() {
   async function tick() {
     try {
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      let studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl ?? null });
+      const activeBoardUrl = await activeMiroBoardUrl();
+      if (activeBoardUrl) {
+        lastDetectedMiroBoardAt = Date.now();
+        lastDetectedMiroBoardUrl = activeBoardUrl;
+      }
+      const recentBoardUrl = Date.now() - lastDetectedMiroBoardAt < rememberedMiroBoardMs ? lastDetectedMiroBoardUrl : undefined;
+      const miroBoardUrl = recognisedChannels.has(channel.name) ? activeBoardUrl ?? recentBoardUrl : undefined;
+      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
       const openedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey, channel.meetUrl);
       if (openedMeetKey) lastOpenedMeetKey = openedMeetKey;
       const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
@@ -88,16 +98,6 @@ async function main() {
       if (!studioStatus.activeRoomId) {
         lastOpenedMeetKey = undefined;
         lastOpenedMiroBoardKey = undefined;
-      }
-      if (studioStatus.activeRoomId) {
-        const miroBoardUrl = await activeMiroBoardUrl();
-        if (miroBoardUrl) {
-          studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
-          const updatedOpenedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey, channel.meetUrl);
-          if (updatedOpenedMeetKey) lastOpenedMeetKey = updatedOpenedMeetKey;
-          const updatedOpenedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
-          if (updatedOpenedMiroBoardKey) lastOpenedMiroBoardKey = updatedOpenedMiroBoardKey;
-        }
       }
       if (!reportedInitialStatus || channel.name !== lastChannelName) {
         const status = recognisedChannels.has(channel.name) ? `joined ${channel.name}` : `left hangout rooms from ${channel.name}`;
