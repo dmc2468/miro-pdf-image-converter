@@ -13,3 +13,9 @@ in the code.
 
 Trunk-based: commit straight to `main`, no merge commits. If local `main` and `origin/main` have diverged (someone
 else pushed in the meantime), rebase onto `origin/main` before pushing — never `git merge origin/main`.
+
+Never push without the user's explicit go-ahead in the current session — committing is fine, pushing is not a
+side effect of it. Every push to `main` triggers a production build and deploy, so batch local commits and push
+once, when asked. This applies to every agent working in this repo, whichever permission mode the session runs in
+(`.claude/settings.json` also prompts on `git push`, but that prompt is skipped in bypass-permissions mode — this
+rule is not).
