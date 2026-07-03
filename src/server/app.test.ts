@@ -9,6 +9,7 @@ describe("parseTeamSpeakStatusInput", () => {
       meetUrl: "https://meet.google.com/aaa-bbbb-ccc",
     })).toEqual({
       channelName: "Hangout room 1",
+      errorMessage: undefined,
       heartbeat: false,
       meetUrl: "https://meet.google.com/aaa-bbbb-ccc",
       miroBoardUrl: undefined,
@@ -21,6 +22,7 @@ describe("parseTeamSpeakStatusInput", () => {
       meetUrl: null,
     })).toEqual({
       channelName: "Hangout room 1",
+      errorMessage: undefined,
       heartbeat: false,
       meetUrl: null,
       miroBoardUrl: undefined,
@@ -32,6 +34,20 @@ describe("parseTeamSpeakStatusInput", () => {
       heartbeat: true,
     })).toEqual({
       channelName: undefined,
+      errorMessage: undefined,
+      heartbeat: true,
+      meetUrl: undefined,
+      miroBoardUrl: undefined,
+    });
+  });
+
+  it("accepts a bridge diagnostic message", () => {
+    expect(parseTeamSpeakStatusInput({
+      errorMessage: "TeamSpeak ClientQuery did not answer.",
+      heartbeat: true,
+    })).toEqual({
+      channelName: undefined,
+      errorMessage: "TeamSpeak ClientQuery did not answer.",
       heartbeat: true,
       meetUrl: undefined,
       miroBoardUrl: undefined,

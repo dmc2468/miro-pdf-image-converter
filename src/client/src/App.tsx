@@ -787,13 +787,14 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
   const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
   const lastSeenAgeMs = lastSeenAt ? Date.now() - lastSeenAt.getTime() : undefined;
   const isFresh = lastSeenAgeMs !== undefined && lastSeenAgeMs < 30_000;
-  const statusLabel = isFresh ? "Running" : currentStatus ? "Needs attention" : "Not set up";
-  const statusClassName = isFresh ? "status status-completed" : currentStatus ? "status status-failed" : "status status-pending";
+  const hasFreshError = isFresh && Boolean(currentStatus?.errorMessage);
+  const statusLabel = hasFreshError ? "Needs attention" : isFresh ? "Running" : currentStatus ? "Needs attention" : "Not connected";
+  const statusClassName = hasFreshError ? "status status-failed" : isFresh ? "status status-completed" : currentStatus ? "status status-failed" : "status status-pending";
   const statusDetail = isFresh
-    ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
+    ? currentStatus?.errorMessage ?? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
     : currentStatus
       ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`
-      : "Waiting for a local bridge check-in from this Mac.";
+      : "No bridge has checked in for this Studio McLeod login.";
   const showInstallPrompt = !isFresh;
 
   async function restartBridge() {

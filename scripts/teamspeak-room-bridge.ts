@@ -32,6 +32,7 @@ interface TeamSpeakChannel {
 
 interface TeamSpeakStatusInput {
   channelName?: string;
+  errorMessage?: string | null;
   heartbeat?: boolean;
   meetUrl?: string | null;
   miroBoardUrl?: string;
@@ -63,6 +64,7 @@ interface ApiErrorResponse {
 const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout room 3"]);
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
+const clientQueryTimeoutMs = 2_500;
 const miroDetectionTimeoutMs = 750;
 const rememberedMiroBoardMs = 120_000;
 const bridgeHeartbeatMs = 10_000;
@@ -99,7 +101,7 @@ async function main() {
       }
       const recentBoardUrl = Date.now() - lastDetectedMiroBoardAt < rememberedMiroBoardMs ? lastDetectedMiroBoardUrl : undefined;
       const miroBoardUrl = recognisedChannels.has(channel.name) ? activeBoardUrl ?? recentBoardUrl : undefined;
-      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
+      const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, errorMessage: null, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
       const openedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey, channel.meetUrl);
       if (openedMeetKey) lastOpenedMeetKey = openedMeetKey;
       const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
@@ -117,16 +119,16 @@ async function main() {
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Unknown TeamSpeak bridge error.";
       process.stderr.write(`${new Date().toISOString()} ${message}\n`);
-      await bridgeHeartbeat(true).catch((heartbeatError: unknown) => {
+      await bridgeHeartbeat(true, message).catch((heartbeatError: unknown) => {
         const heartbeatMessage = heartbeatError instanceof Error ? heartbeatError.message : "Unknown TeamSpeak bridge heartbeat error.";
         process.stderr.write(`${new Date().toISOString()} ${heartbeatMessage}\n`);
       });
     }
   }
 
-  async function bridgeHeartbeat(force = false): Promise<void> {
+  async function bridgeHeartbeat(force = false, errorMessage?: string): Promise<void> {
     if (!force && Date.now() - lastBridgeHeartbeatAt < bridgeHeartbeatMs) return;
-    await updateStudioTeamSpeakStatus(studioSettings, { heartbeat: true });
+    await updateStudioTeamSpeakStatus(studioSettings, { errorMessage, heartbeat: true });
     lastBridgeHeartbeatAt = Date.now();
   }
 
@@ -312,21 +314,40 @@ interface ClientQueryConnection {
   close(): void;
 }
 
+interface PendingClientQueryCommand {
+  reject(error: Error): void;
+  resolve(lines: string[]): void;
+  timeout: NodeJS.Timeout;
+}
+
 function connectClientQuery(config: ClientQueryConfig): Promise<ClientQueryConnection> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host: config.host, port: config.port });
     let buffer = "";
-    let pending: ((lines: string[]) => void) | undefined;
-    let pendingReject: ((error: Error) => void) | undefined;
+    let pending: PendingClientQueryCommand | undefined;
     let ready = false;
+    let settled = false;
+    const readyTimeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      reject(new Error("TeamSpeak ClientQuery did not answer. Open TeamSpeak and enable ClientQuery."));
+    }, clientQueryTimeoutMs);
 
     socket.setEncoding("utf8");
     function resolveConnection() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(readyTimeout);
       resolve({
         command(command: string) {
           return new Promise((commandResolve, commandReject) => {
-            pending = commandResolve;
-            pendingReject = commandReject;
+            const commandTimeout = setTimeout(() => {
+              if (pending?.reject !== commandReject) return;
+              pending = undefined;
+              commandReject(new Error("TeamSpeak ClientQuery did not respond to a command."));
+            }, clientQueryTimeoutMs);
+            pending = { reject: commandReject, resolve: commandResolve, timeout: commandTimeout };
             socket.write(`${command}\n`);
           });
         },
@@ -347,25 +368,39 @@ function connectClientQuery(config: ClientQueryConfig): Promise<ClientQueryConne
       if (!buffer.includes("error id=") || !pending) return;
       const lines = buffer.split("\n").map((line) => line.trim()).filter(Boolean);
       buffer = "";
-      const commandResolve = pending;
+      const command = pending;
       pending = undefined;
-      pendingReject = undefined;
-      commandResolve(lines);
+      clearTimeout(command.timeout);
+      command.resolve(lines);
     });
     socket.on("error", (error) => {
-      if (pendingReject) {
-        pendingReject(error);
-        pendingReject = undefined;
+      if (!ready && !settled) {
+        settled = true;
+        clearTimeout(readyTimeout);
+        reject(new Error(`Could not connect to TeamSpeak ClientQuery on ${config.host}:${config.port}. Open TeamSpeak and enable ClientQuery.`));
+        return;
+      }
+      if (pending) {
+        const command = pending;
+        pending = undefined;
+        clearTimeout(command.timeout);
+        command.reject(error);
       }
     });
     socket.on("close", () => {
       if (!ready) {
-        reject(new Error("TeamSpeak ClientQuery closed before it was ready."));
+        if (!settled) {
+          settled = true;
+          clearTimeout(readyTimeout);
+          reject(new Error("TeamSpeak ClientQuery closed before it was ready."));
+        }
         return;
       }
-      if (pendingReject) {
-        pendingReject(new Error("TeamSpeak ClientQuery closed before it answered."));
-        pendingReject = undefined;
+      if (pending) {
+        const command = pending;
+        pending = undefined;
+        clearTimeout(command.timeout);
+        command.reject(new Error("TeamSpeak ClientQuery closed before it answered."));
       }
     });
   });

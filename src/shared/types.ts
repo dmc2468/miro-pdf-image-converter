@@ -127,6 +127,7 @@ export interface MeetingRoom {
 export interface TeamSpeakBridgeStatus {
   userId: string;
   email: string;
+  errorMessage?: string;
   name?: string;
   channelName?: string;
   activeRoomId?: MeetingRoomId;
@@ -148,6 +149,7 @@ export interface MeetingRoomBoardInput {
 
 export interface TeamSpeakStatusInput {
   channelName?: string;
+  errorMessage?: string | null;
   heartbeat?: boolean;
   meetUrl?: string | null;
   miroBoardUrl?: string;

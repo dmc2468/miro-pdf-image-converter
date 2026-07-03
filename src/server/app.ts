@@ -469,6 +469,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       await repositories.teamSpeakBridges.update({
         userId: user.id,
         email: user.email,
+        errorMessage: input.errorMessage,
         name: storedUser?.name,
         channelName: input.channelName,
         activeRoomId: input.channelName !== undefined ? activeRoomId ?? null : undefined,
@@ -801,10 +802,16 @@ export function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput 
   }
   return {
     channelName: optionalString(value.channelName),
+    errorMessage: optionalNullableString(value.errorMessage),
     heartbeat: booleanValue(value.heartbeat, false),
     meetUrl: optionalMeetUrl(value.meetUrl),
     miroBoardUrl: optionalMiroBoardUrl(value.miroBoardUrl),
   };
+}
+
+function optionalNullableString(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return optionalString(value);
 }
 
 function optionalMeetUrl(value: unknown): string | null | undefined {

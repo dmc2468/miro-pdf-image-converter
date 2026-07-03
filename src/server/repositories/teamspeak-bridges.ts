@@ -8,6 +8,7 @@ export interface TeamSpeakBridgeStatusRecord extends Omit<TeamSpeakBridgeStatus,
 export interface TeamSpeakBridgeStatusInput {
   userId: string;
   email: string;
+  errorMessage?: string | null;
   name?: string;
   channelName?: string;
   activeRoomId?: MeetingRoomId | null;
@@ -47,12 +48,17 @@ export class MongoTeamSpeakBridgeRepository implements TeamSpeakBridgeRepository
       userId: input.userId,
       email: input.email,
       channelName: existing?.channelName,
+      errorMessage: existing?.errorMessage,
       activeRoomId: existing?.activeRoomId,
       lastSeenAt: new Date(),
     };
     if (input.name !== undefined) status.name = input.name;
     else if (existing?.name !== undefined) status.name = existing.name;
     if (input.channelName !== undefined) status.channelName = input.channelName;
+    if (input.errorMessage !== undefined) {
+      if (input.errorMessage === null) delete status.errorMessage;
+      else status.errorMessage = input.errorMessage;
+    }
     if (input.activeRoomId !== undefined) {
       if (input.activeRoomId === null) delete status.activeRoomId;
       else status.activeRoomId = input.activeRoomId;
@@ -79,12 +85,17 @@ export class MemoryTeamSpeakBridgeRepository implements TeamSpeakBridgeRepositor
       userId: input.userId,
       email: input.email,
       channelName: existing?.channelName,
+      errorMessage: existing?.errorMessage,
       activeRoomId: existing?.activeRoomId,
       lastSeenAt: new Date(),
     };
     if (input.name !== undefined) status.name = input.name;
     else if (existing?.name !== undefined) status.name = existing.name;
     if (input.channelName !== undefined) status.channelName = input.channelName;
+    if (input.errorMessage !== undefined) {
+      if (input.errorMessage === null) delete status.errorMessage;
+      else status.errorMessage = input.errorMessage;
+    }
     if (input.activeRoomId !== undefined) {
       if (input.activeRoomId === null) delete status.activeRoomId;
       else status.activeRoomId = input.activeRoomId;
