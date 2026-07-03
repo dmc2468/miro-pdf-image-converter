@@ -17,6 +17,7 @@ interface StudioConfig {
   baseUrl: string;
   email?: string;
   token: string;
+  userId?: string;
 }
 
 interface StudioCredentials {
@@ -41,13 +42,20 @@ interface TeamSpeakStatusInput {
 
 interface MeetingRoomBoard {
   sharedByEmail?: string;
+  sharedByUserId?: string;
   url: string;
+}
+
+interface MeetingRoomParticipant {
+  email: string;
+  userId: string;
 }
 
 interface MeetingRoom {
   id: string;
   meetUrl: string;
   miroBoard?: MeetingRoomBoard;
+  participants: MeetingRoomParticipant[];
 }
 
 interface TeamSpeakStatusResponse {
@@ -63,11 +71,17 @@ interface ApiErrorResponse {
   error?: string;
 }
 
+interface TokenPayload {
+  email?: string;
+  sub?: string;
+}
+
 const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout room 3"]);
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
 const clientQueryTimeoutMs = 2_500;
 const miroDetectionTimeoutMs = 750;
+const miroOpenDelayMs = 7_000;
 const rememberedMiroBoardMs = 120_000;
 const bridgeHeartbeatMs = 10_000;
 const execFileAsync = promisify(execFile);
@@ -106,7 +120,7 @@ async function main() {
       const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, errorMessage: null, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
       const openedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey, channel.meetUrl);
       if (openedMeetKey) lastOpenedMeetKey = openedMeetKey;
-      const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey, studioSettings.email);
+      const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey, studioSettings);
       if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
       if (!studioStatus.activeRoomId) {
         lastOpenedMeetKey = undefined;
@@ -173,14 +187,16 @@ function startControlServer(): void {
 async function studioConfig(): Promise<StudioConfig> {
   const baseUrl = (process.env.STUDIO_MCLEOD_BASE_URL ?? "https://studio-mcleod.fly.dev").replace(/\/$/, "");
   if (process.env.STUDIO_MCLEOD_TOKEN) {
-    return { baseUrl, email: process.env.STUDIO_MCLEOD_EMAIL, token: process.env.STUDIO_MCLEOD_TOKEN };
+    const identity = tokenPayload(process.env.STUDIO_MCLEOD_TOKEN);
+    return { baseUrl, email: process.env.STUDIO_MCLEOD_EMAIL ?? identity.email, token: process.env.STUDIO_MCLEOD_TOKEN, userId: identity.sub };
   }
   const credentials = await studioCredentials();
   if (!credentials) {
     throw new Error("Set STUDIO_MCLEOD_TOKEN or STUDIO_MCLEOD_EMAIL and STUDIO_MCLEOD_PASSWORD.");
   }
   const token = await studioToken(baseUrl, credentials);
-  return { baseUrl, email: credentials.email, token };
+  const identity = tokenPayload(token);
+  return { baseUrl, email: identity.email ?? credentials.email, token, userId: identity.sub };
 }
 
 async function studioToken(baseUrl: string, credentials: StudioCredentials): Promise<string> {
@@ -203,6 +219,26 @@ async function studioCredentials(): Promise<StudioCredentials | undefined> {
   if (password) return { email, password };
   const keychainPassword = await keychainStudioPassword(email);
   return keychainPassword ? { email, password: keychainPassword } : undefined;
+}
+
+function tokenPayload(token: string): TokenPayload {
+  const payload = token.split(".")[1];
+  if (!payload) return {};
+  try {
+    const decoded = Buffer.from(payload, "base64url").toString("utf8");
+    const value: unknown = JSON.parse(decoded);
+    if (!objectRecord(value)) return {};
+    return {
+      email: typeof value.email === "string" ? value.email : undefined,
+      sub: typeof value.sub === "string" ? value.sub : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function objectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function keychainStudioPassword(email: string): Promise<string | undefined> {
@@ -466,18 +502,32 @@ async function openRoomMeet(status: TeamSpeakStatusResponse, lastOpenedMeetKey: 
   return meetKey;
 }
 
-async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined, ownEmail: string | undefined): Promise<string | undefined> {
+async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined, studioSettings: StudioConfig): Promise<string | undefined> {
   if (!status.activeRoomId) return undefined;
   const room = status.rooms.find((item) => item.id === status.activeRoomId);
   const board = room?.miroBoard;
   const boardUrl = board?.url;
   if (!boardUrl) return undefined;
-  if (ownEmail && board.sharedByEmail?.toLowerCase() === ownEmail.toLowerCase()) return undefined;
+  if (room && ownRoomBoard(room, studioSettings)) return undefined;
   const boardKey = `${status.activeRoomId}:${board.sharedByEmail ?? "unknown"}:${boardUrl}`;
   if (boardKey === lastOpenedMiroBoardKey) return undefined;
-  await openUrl(boardUrl);
+  await delay(miroOpenDelayMs);
+  await openMiroBoard(boardUrl);
   process.stdout.write(`${new Date().toISOString()} opened ${boardUrl}\n`);
   return boardKey;
+}
+
+function ownRoomBoard(room: MeetingRoom, studioSettings: StudioConfig): boolean {
+  const board = room.miroBoard;
+  if (!board) return false;
+  if (studioSettings.userId && board.sharedByUserId === studioSettings.userId) return true;
+  if (studioSettings.email && board.sharedByEmail?.toLowerCase() === studioSettings.email.toLowerCase()) return true;
+  if (room.participants.length === 1) {
+    const participant = room.participants[0];
+    if (studioSettings.userId && participant?.userId === studioSettings.userId) return true;
+    if (studioSettings.email && participant?.email.toLowerCase() === studioSettings.email.toLowerCase()) return true;
+  }
+  return false;
 }
 
 async function openUrl(url: string): Promise<void> {
@@ -490,6 +540,25 @@ async function openUrl(url: string): Promise<void> {
     return;
   }
   await execFileAsync("xdg-open", [url]);
+}
+
+async function openMiroBoard(url: string): Promise<void> {
+  if (process.platform === "darwin") {
+    try {
+      await execFileAsync("open", ["-a", "Miro", url]);
+      return;
+    } catch {
+      await openUrl(url);
+      return;
+    }
+  }
+  await openUrl(url);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
