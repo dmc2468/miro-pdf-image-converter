@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { CURRENT_TEAMSPEAK_BRIDGE_VERSION } from "../src/shared/teamspeak-bridge.js";
 import { meetUrlFromTeamSpeakDescription } from "../src/shared/teamspeak.js";
 
 interface ClientQueryConfig {
@@ -33,6 +34,7 @@ interface TeamSpeakChannel {
 }
 
 interface TeamSpeakStatusInput {
+  bridgeVersion?: string;
   channelName?: string;
   errorMessage?: string | null;
   heartbeat?: boolean;
@@ -482,7 +484,7 @@ async function updateStudioTeamSpeakStatus(config: StudioConfig, input: TeamSpea
       Authorization: `Bearer ${config.token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, bridgeVersion: CURRENT_TEAMSPEAK_BRIDGE_VERSION }),
   });
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, "Could not update Studio TeamSpeak status."));

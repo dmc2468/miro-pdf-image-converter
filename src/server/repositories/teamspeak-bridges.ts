@@ -8,6 +8,7 @@ export interface TeamSpeakBridgeStatusRecord extends Omit<TeamSpeakBridgeStatus,
 export interface TeamSpeakBridgeStatusInput {
   userId: string;
   email: string;
+  bridgeVersion?: string;
   errorMessage?: string | null;
   name?: string;
   channelName?: string;
@@ -47,6 +48,7 @@ export class MongoTeamSpeakBridgeRepository implements TeamSpeakBridgeRepository
     const status: TeamSpeakBridgeStatusRecord = {
       userId: input.userId,
       email: input.email,
+      bridgeVersion: input.bridgeVersion ?? existing?.bridgeVersion,
       channelName: existing?.channelName,
       errorMessage: existing?.errorMessage,
       activeRoomId: existing?.activeRoomId,
@@ -84,6 +86,7 @@ export class MemoryTeamSpeakBridgeRepository implements TeamSpeakBridgeRepositor
     const status: TeamSpeakBridgeStatusRecord = {
       userId: input.userId,
       email: input.email,
+      bridgeVersion: input.bridgeVersion ?? existing?.bridgeVersion,
       channelName: existing?.channelName,
       errorMessage: existing?.errorMessage,
       activeRoomId: existing?.activeRoomId,

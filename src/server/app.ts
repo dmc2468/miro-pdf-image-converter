@@ -469,6 +469,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       await repositories.teamSpeakBridges.update({
         userId: user.id,
         email: user.email,
+        bridgeVersion: input.bridgeVersion,
         errorMessage: input.errorMessage,
         name: storedUser?.name,
         channelName: input.channelName,
@@ -801,6 +802,7 @@ export function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput 
     throw new HttpError(400, "TeamSpeak status must be an object.");
   }
   return {
+    bridgeVersion: optionalString(value.bridgeVersion),
     channelName: optionalString(value.channelName),
     errorMessage: optionalNullableString(value.errorMessage),
     heartbeat: booleanValue(value.heartbeat, false),
