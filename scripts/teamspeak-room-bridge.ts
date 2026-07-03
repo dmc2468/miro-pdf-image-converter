@@ -32,6 +32,7 @@ interface TeamSpeakChannel {
 
 interface TeamSpeakStatusInput {
   channelName?: string;
+  heartbeat?: boolean;
   meetUrl?: string | null;
   miroBoardUrl?: string;
 }
@@ -64,6 +65,7 @@ const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
 const miroDetectionTimeoutMs = 750;
 const rememberedMiroBoardMs = 120_000;
+const bridgeHeartbeatMs = 10_000;
 const execFileAsync = promisify(execFile);
 
 async function main() {
@@ -76,12 +78,16 @@ async function main() {
   let lastOpenedMeetKey: string | undefined;
   let lastOpenedMiroBoardKey: string | undefined;
   let reportedInitialStatus = false;
+  let lastBridgeHeartbeatAt = 0;
 
   process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
   startControlServer();
 
+  await bridgeHeartbeat();
+
   async function tick() {
     try {
+      await bridgeHeartbeat();
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
       const activeBoardUrl = await activeMiroBoardUrl();
       if (activeBoardUrl) {
@@ -108,7 +114,17 @@ async function main() {
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Unknown TeamSpeak bridge error.";
       process.stderr.write(`${new Date().toISOString()} ${message}\n`);
+      await bridgeHeartbeat(true).catch((heartbeatError: unknown) => {
+        const heartbeatMessage = heartbeatError instanceof Error ? heartbeatError.message : "Unknown TeamSpeak bridge heartbeat error.";
+        process.stderr.write(`${new Date().toISOString()} ${heartbeatMessage}\n`);
+      });
     }
+  }
+
+  async function bridgeHeartbeat(force = false): Promise<void> {
+    if (!force && Date.now() - lastBridgeHeartbeatAt < bridgeHeartbeatMs) return;
+    await updateStudioTeamSpeakStatus(studioSettings, { heartbeat: true });
+    lastBridgeHeartbeatAt = Date.now();
   }
 
   await tick();

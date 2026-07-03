@@ -9,6 +9,7 @@ describe("parseTeamSpeakStatusInput", () => {
       meetUrl: "https://meet.google.com/aaa-bbbb-ccc",
     })).toEqual({
       channelName: "Hangout room 1",
+      heartbeat: false,
       meetUrl: "https://meet.google.com/aaa-bbbb-ccc",
       miroBoardUrl: undefined,
     });
@@ -20,7 +21,19 @@ describe("parseTeamSpeakStatusInput", () => {
       meetUrl: null,
     })).toEqual({
       channelName: "Hangout room 1",
+      heartbeat: false,
       meetUrl: null,
+      miroBoardUrl: undefined,
+    });
+  });
+
+  it("accepts a bridge heartbeat without a TeamSpeak room", () => {
+    expect(parseTeamSpeakStatusInput({
+      heartbeat: true,
+    })).toEqual({
+      channelName: undefined,
+      heartbeat: true,
+      meetUrl: undefined,
       miroBoardUrl: undefined,
     });
   });

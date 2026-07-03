@@ -471,30 +471,32 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
         email: user.email,
         name: storedUser?.name,
         channelName: input.channelName,
-        activeRoomId,
+        activeRoomId: input.channelName !== undefined ? activeRoomId ?? null : undefined,
       });
       const roomIds: MeetingRoomId[] = ["call-hangout-1", "call-hangout-2", "call-hangout-3"];
-      for (const roomId of roomIds.filter((item) => item !== activeRoomId)) {
-        await repositories.meetingRooms.leave(roomId, user.id);
-      }
-      if (activeRoomId) {
-        await repositories.meetingRooms.join(activeRoomId, {
-          userId: user.id,
-          email: user.email,
-          name: storedUser?.name,
-          joinedAt: new Date().toISOString(),
-        });
-        if (input.meetUrl !== undefined) {
-          await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl ?? "" });
+      if (!input.heartbeat) {
+        for (const roomId of roomIds.filter((item) => item !== activeRoomId)) {
+          await repositories.meetingRooms.leave(roomId, user.id);
         }
-        if (input.miroBoardUrl) {
-          await repositories.meetingRooms.shareBoard(activeRoomId, {
-            url: input.miroBoardUrl,
-            sharedByUserId: user.id,
-            sharedByEmail: user.email,
-            sharedByName: storedUser?.name,
-            sharedAt: new Date().toISOString(),
+        if (activeRoomId) {
+          await repositories.meetingRooms.join(activeRoomId, {
+            userId: user.id,
+            email: user.email,
+            name: storedUser?.name,
+            joinedAt: new Date().toISOString(),
           });
+          if (input.meetUrl !== undefined) {
+            await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl ?? "" });
+          }
+          if (input.miroBoardUrl) {
+            await repositories.meetingRooms.shareBoard(activeRoomId, {
+              url: input.miroBoardUrl,
+              sharedByUserId: user.id,
+              sharedByEmail: user.email,
+              sharedByName: storedUser?.name,
+              sharedAt: new Date().toISOString(),
+            });
+          }
         }
       }
       const rooms = await repositories.meetingRooms.list();
@@ -799,6 +801,7 @@ export function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput 
   }
   return {
     channelName: optionalString(value.channelName),
+    heartbeat: booleanValue(value.heartbeat, false),
     meetUrl: optionalMeetUrl(value.meetUrl),
     miroBoardUrl: optionalMiroBoardUrl(value.miroBoardUrl),
   };

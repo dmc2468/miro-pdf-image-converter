@@ -10,7 +10,7 @@ export interface TeamSpeakBridgeStatusInput {
   email: string;
   name?: string;
   channelName?: string;
-  activeRoomId?: MeetingRoomId;
+  activeRoomId?: MeetingRoomId | null;
 }
 
 export interface TeamSpeakBridgeRepository {
@@ -42,14 +42,21 @@ export class MongoTeamSpeakBridgeRepository implements TeamSpeakBridgeRepository
   }
 
   async update(input: TeamSpeakBridgeStatusInput): Promise<TeamSpeakBridgeStatusRecord> {
+    const existing = await this.collection.findOne({ userId: input.userId });
     const status: TeamSpeakBridgeStatusRecord = {
       userId: input.userId,
       email: input.email,
+      channelName: existing?.channelName,
+      activeRoomId: existing?.activeRoomId,
       lastSeenAt: new Date(),
     };
     if (input.name !== undefined) status.name = input.name;
+    else if (existing?.name !== undefined) status.name = existing.name;
     if (input.channelName !== undefined) status.channelName = input.channelName;
-    if (input.activeRoomId !== undefined) status.activeRoomId = input.activeRoomId;
+    if (input.activeRoomId !== undefined) {
+      if (input.activeRoomId === null) delete status.activeRoomId;
+      else status.activeRoomId = input.activeRoomId;
+    }
     await this.collection.replaceOne({ userId: input.userId }, status, { upsert: true });
     return status;
   }
@@ -67,14 +74,21 @@ export class MemoryTeamSpeakBridgeRepository implements TeamSpeakBridgeRepositor
   }
 
   async update(input: TeamSpeakBridgeStatusInput): Promise<TeamSpeakBridgeStatusRecord> {
+    const existing = this.statuses.get(input.userId);
     const status: TeamSpeakBridgeStatusRecord = {
       userId: input.userId,
       email: input.email,
+      channelName: existing?.channelName,
+      activeRoomId: existing?.activeRoomId,
       lastSeenAt: new Date(),
     };
     if (input.name !== undefined) status.name = input.name;
+    else if (existing?.name !== undefined) status.name = existing.name;
     if (input.channelName !== undefined) status.channelName = input.channelName;
-    if (input.activeRoomId !== undefined) status.activeRoomId = input.activeRoomId;
+    if (input.activeRoomId !== undefined) {
+      if (input.activeRoomId === null) delete status.activeRoomId;
+      else status.activeRoomId = input.activeRoomId;
+    }
     this.statuses.set(input.userId, status);
     return status;
   }
