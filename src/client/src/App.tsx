@@ -783,18 +783,11 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [restartingBridge, setRestartingBridge] = useState(false);
   const currentStatus = statuses.find((status) => status.userId === session.user.id);
-  const activeRoom = rooms.find((room) => room.id === currentStatus?.activeRoomId);
-  const lastSeenAt = currentStatus ? new Date(currentStatus.lastSeenAt) : null;
-  const lastSeenAgeMs = lastSeenAt ? Date.now() - lastSeenAt.getTime() : undefined;
-  const isFresh = lastSeenAgeMs !== undefined && lastSeenAgeMs < 30_000;
-  const hasFreshError = isFresh && Boolean(currentStatus?.errorMessage);
-  const statusLabel = hasFreshError ? "Needs attention" : isFresh ? "Running" : currentStatus ? "Needs attention" : "Not connected";
-  const statusClassName = hasFreshError ? "status status-failed" : isFresh ? "status status-completed" : currentStatus ? "status status-failed" : "status status-pending";
-  const statusDetail = isFresh
-    ? currentStatus?.errorMessage ?? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}.`
-    : currentStatus
-      ? `Last seen ${relativeBridgeTime(lastSeenAgeMs ?? 0)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`
-      : "No bridge has checked in for this Studio McLeod login.";
+  const currentBridge = currentStatus ? bridgeStatusView(currentStatus, rooms) : null;
+  const statusLabel = currentBridge?.label ?? "Not connected";
+  const statusClassName = currentBridge?.className ?? "status status-pending";
+  const statusDetail = currentBridge?.detail ?? "No bridge has checked in for this Studio McLeod login.";
+  const isFresh = currentBridge?.fresh === true;
   const showInstallPrompt = !isFresh;
 
   async function restartBridge() {
@@ -844,8 +837,27 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
         </div>
         <p className="mt-1 text-sm text-muted">{statusDetail}</p>
         <p className="mt-2 text-sm text-ink">
-          Current room: <span className="font-semibold">{activeRoom?.name ?? currentStatus?.channelName ?? "Not detected"}</span>
+          Current room: <span className="font-semibold">{currentBridge?.roomLabel ?? "Not detected"}</span>
         </p>
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bridge check-ins</p>
+          <div className="mt-2 space-y-2">
+            {statuses.length ? statuses.map((status) => {
+              const view = bridgeStatusView(status, rooms);
+              return (
+                <div className="rounded-lg border border-line bg-stone-50 px-3 py-2" key={status.userId}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-ink">{status.name ?? status.email}</p>
+                    <span className={view.className}>{view.label}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">{status.email}</p>
+                  <p className="mt-1 text-xs text-muted">Room: <span className="font-medium text-ink">{view.roomLabel}</span></p>
+                  <p className="mt-1 text-xs text-muted">{view.detail}</p>
+                </div>
+              );
+            }) : <p className="text-sm text-muted">No bridge check-ins yet.</p>}
+          </div>
+        </div>
         {currentStatus && !isFresh ? (
           <div className="mt-4 rounded-lg border border-line bg-stone-50 p-3">
             <p className="text-sm font-medium text-ink">Restart TeamSpeak Bridge</p>
@@ -860,6 +872,46 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
       </section>
     </div>
   );
+}
+
+interface BridgeStatusView {
+  className: string;
+  detail: string;
+  fresh: boolean;
+  label: string;
+  roomLabel: string;
+}
+
+function bridgeStatusView(status: TeamSpeakBridgeStatus, rooms: MeetingRoom[]): BridgeStatusView {
+  const lastSeenAgeMs = Date.now() - new Date(status.lastSeenAt).getTime();
+  const fresh = lastSeenAgeMs < 30_000;
+  const room = rooms.find((item) => item.id === status.activeRoomId);
+  const roomLabel = room?.name ?? status.channelName ?? "Not detected";
+  if (fresh && status.errorMessage) {
+    return {
+      className: "status status-failed",
+      detail: status.errorMessage,
+      fresh,
+      label: "Needs attention",
+      roomLabel,
+    };
+  }
+  if (fresh) {
+    return {
+      className: "status status-completed",
+      detail: `Last seen ${relativeBridgeTime(lastSeenAgeMs)}.`,
+      fresh,
+      label: "Running",
+      roomLabel,
+    };
+  }
+  return {
+    className: "status status-failed",
+    detail: `Last seen ${relativeBridgeTime(lastSeenAgeMs)}. Restart TeamSpeak or rerun the bridge installer if this stays stale.`,
+    fresh,
+    label: "Needs attention",
+    roomLabel,
+  };
 }
 
 function relativeBridgeTime(ageMs: number): string {
