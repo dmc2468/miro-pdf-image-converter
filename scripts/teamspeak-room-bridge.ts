@@ -70,8 +70,8 @@ const execFileAsync = promisify(execFile);
 
 async function main() {
   const studioSettings = await studioConfig();
-  const clientQuerySettings = await clientQueryConfig();
   const intervalMs = positiveInteger(process.env.TEAMSPEAK_BRIDGE_INTERVAL_MS, 1000);
+  let clientQuerySettings: ClientQueryConfig | undefined;
   let lastChannelName: string | undefined;
   let lastDetectedMiroBoardAt = 0;
   let lastDetectedMiroBoardUrl: string | undefined;
@@ -80,7 +80,6 @@ async function main() {
   let reportedInitialStatus = false;
   let lastBridgeHeartbeatAt = 0;
 
-  process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
   startControlServer();
 
   await bridgeHeartbeat();
@@ -88,6 +87,10 @@ async function main() {
   async function tick() {
     try {
       await bridgeHeartbeat();
+      if (!clientQuerySettings) {
+        clientQuerySettings = await clientQueryConfig();
+        process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
+      }
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
       const activeBoardUrl = await activeMiroBoardUrl();
       if (activeBoardUrl) {
