@@ -683,6 +683,10 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.get("/teamspeak-bridge/install", (_request, response) => {
+    response.type("text/plain").send(teamSpeakBridgeInstallScript());
+  });
+
   const clientDir = path.resolve("dist/client");
   app.use(express.static(clientDir));
   app.get("*", (_request, response) => {
@@ -713,6 +717,40 @@ function parseMeetingRoomId(value: unknown): MeetingRoomId {
     return value;
   }
   throw new HttpError(404, "Meeting room not found.");
+}
+
+function teamSpeakBridgeInstallScript(): string {
+  return [
+    "set -e",
+    "APP_DIR=\"$HOME/Library/Application Support/Studio McLeod/teamspeak-bridge\"",
+    "REPO_DIR=\"$APP_DIR/repo\"",
+    "REPO_URL=\"https://github.com/dmc2468/miro-pdf-image-converter.git\"",
+    "if ! command -v git >/dev/null 2>&1; then",
+    "  echo \"Git is required. Open Terminal and run: xcode-select --install\"",
+    "  exit 1",
+    "fi",
+    "if ! command -v node >/dev/null 2>&1; then",
+    "  echo \"Node.js is required before the TeamSpeak bridge can be installed.\"",
+    "  echo \"Install Node.js 22 or newer from https://nodejs.org/ and run this command again.\"",
+    "  exit 1",
+    "fi",
+    "if ! command -v corepack >/dev/null 2>&1; then",
+    "  echo \"Corepack is required. Install Node.js 22 or newer from https://nodejs.org/ and run this command again.\"",
+    "  exit 1",
+    "fi",
+    "mkdir -p \"$APP_DIR\"",
+    "if [ -d \"$REPO_DIR/.git\" ]; then",
+    "  git -C \"$REPO_DIR\" fetch origin main",
+    "  git -C \"$REPO_DIR\" checkout main",
+    "  git -C \"$REPO_DIR\" reset --hard origin/main",
+    "else",
+    "  git clone \"$REPO_URL\" \"$REPO_DIR\"",
+    "fi",
+    "cd \"$REPO_DIR\"",
+    "corepack enable",
+    "corepack pnpm install --frozen-lockfile",
+    "corepack pnpm teamspeak:bridge:install",
+  ].join("\n");
 }
 
 function parseMeetingRoomInput(value: unknown): MeetingRoomInput {

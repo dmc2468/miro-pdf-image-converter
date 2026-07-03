@@ -34,8 +34,6 @@ import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, crea
 const SESSION_KEY = "studio-mcleod-session";
 const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
 const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
-const TEAM_SPEAK_BRIDGE_INSTALL_COMMAND = `cd /Users/duncanmcleod/Documents/VS_Code_files/SM_PDFConverter
-PATH="/Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" /Users/duncanmcleod/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm teamspeak:bridge:install`;
 const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
 type Module = "miro-converter" | "miro-board-share" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
@@ -48,6 +46,10 @@ function currentModule(): Module {
   if (window.location.pathname.startsWith("/admin/release-notes")) return "release-notes";
   if (window.location.pathname.startsWith("/admin/sessions")) return "sessions";
   return "miro-converter";
+}
+
+function teamSpeakBridgeInstallCommand(): string {
+  return `curl -fsSL ${window.location.origin}/teamspeak-bridge/install | /bin/zsh`;
 }
 
 export function App() {
@@ -818,7 +820,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
               type="button"
               title="Copies a Terminal command."
               onClick={() => {
-                void navigator.clipboard.writeText(TEAM_SPEAK_BRIDGE_INSTALL_COMMAND);
+                void navigator.clipboard.writeText(teamSpeakBridgeInstallCommand());
                 setCopyMessage("Copied. Paste into Terminal and press Return.");
               }}
             >
