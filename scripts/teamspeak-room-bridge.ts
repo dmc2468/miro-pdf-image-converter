@@ -15,6 +15,7 @@ interface ClientQueryConfig {
 
 interface StudioConfig {
   baseUrl: string;
+  email?: string;
   token: string;
 }
 
@@ -39,6 +40,7 @@ interface TeamSpeakStatusInput {
 }
 
 interface MeetingRoomBoard {
+  sharedByEmail?: string;
   url: string;
 }
 
@@ -104,7 +106,7 @@ async function main() {
       const studioStatus = await updateStudioTeamSpeakStatus(studioSettings, { channelName: channel.name, errorMessage: null, meetUrl: channel.meetUrl ?? null, miroBoardUrl });
       const openedMeetKey = await openRoomMeet(studioStatus, lastOpenedMeetKey, channel.meetUrl);
       if (openedMeetKey) lastOpenedMeetKey = openedMeetKey;
-      const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey);
+      const openedMiroBoardKey = await openRoomMiroBoard(studioStatus, lastOpenedMiroBoardKey, studioSettings.email);
       if (openedMiroBoardKey) lastOpenedMiroBoardKey = openedMiroBoardKey;
       if (!studioStatus.activeRoomId) {
         lastOpenedMeetKey = undefined;
@@ -170,15 +172,18 @@ function startControlServer(): void {
 
 async function studioConfig(): Promise<StudioConfig> {
   const baseUrl = (process.env.STUDIO_MCLEOD_BASE_URL ?? "https://studio-mcleod.fly.dev").replace(/\/$/, "");
-  const token = process.env.STUDIO_MCLEOD_TOKEN ?? await studioToken(baseUrl);
-  return { baseUrl, token };
-}
-
-async function studioToken(baseUrl: string): Promise<string> {
+  if (process.env.STUDIO_MCLEOD_TOKEN) {
+    return { baseUrl, email: process.env.STUDIO_MCLEOD_EMAIL, token: process.env.STUDIO_MCLEOD_TOKEN };
+  }
   const credentials = await studioCredentials();
   if (!credentials) {
     throw new Error("Set STUDIO_MCLEOD_TOKEN or STUDIO_MCLEOD_EMAIL and STUDIO_MCLEOD_PASSWORD.");
   }
+  const token = await studioToken(baseUrl, credentials);
+  return { baseUrl, email: credentials.email, token };
+}
+
+async function studioToken(baseUrl: string, credentials: StudioCredentials): Promise<string> {
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -461,12 +466,14 @@ async function openRoomMeet(status: TeamSpeakStatusResponse, lastOpenedMeetKey: 
   return meetKey;
 }
 
-async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined): Promise<string | undefined> {
+async function openRoomMiroBoard(status: TeamSpeakStatusResponse, lastOpenedMiroBoardKey: string | undefined, ownEmail: string | undefined): Promise<string | undefined> {
   if (!status.activeRoomId) return undefined;
   const room = status.rooms.find((item) => item.id === status.activeRoomId);
-  const boardUrl = room?.miroBoard?.url;
+  const board = room?.miroBoard;
+  const boardUrl = board?.url;
   if (!boardUrl) return undefined;
-  const boardKey = `${status.activeRoomId}:${boardUrl}`;
+  if (ownEmail && board.sharedByEmail?.toLowerCase() === ownEmail.toLowerCase()) return undefined;
+  const boardKey = `${status.activeRoomId}:${board.sharedByEmail ?? "unknown"}:${boardUrl}`;
   if (boardKey === lastOpenedMiroBoardKey) return undefined;
   await openUrl(boardUrl);
   process.stdout.write(`${new Date().toISOString()} opened ${boardUrl}\n`);

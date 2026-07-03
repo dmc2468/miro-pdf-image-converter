@@ -811,7 +811,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-ink">Install TeamSpeak Bridge</h3>
-              <p className="mt-1 text-sm text-muted">Install the local bridge once on this Mac to let TeamSpeak update your room automatically.</p>
+              <p className="mt-1 text-sm text-muted">Install the local bridge once on this Mac. TeamSpeak ClientQuery must be enabled for room detection.</p>
             </div>
             <button
               className="secondary-button"

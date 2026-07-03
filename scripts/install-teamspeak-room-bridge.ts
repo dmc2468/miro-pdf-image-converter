@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline/promises";
@@ -22,6 +23,7 @@ interface BridgeSetup {
 const execFileAsync = promisify(execFile);
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const launchAgentLabel = "com.studiomcleod.teamspeak-room-bridge";
+const clientQueryPort = 25639;
 const repositoryPath = path.resolve(import.meta.dirname, "..");
 const nodeDirectory = path.dirname(process.execPath);
 const pnpmPath = process.env.npm_execpath ?? "pnpm";
@@ -32,7 +34,7 @@ async function main(): Promise<void> {
   await savePassword(setup);
   const plistPath = await writeLaunchAgent(setup);
   await startLaunchAgent(plistPath);
-  process.stdout.write("TeamSpeak bridge is installed and running in the background.\n");
+  await writeSetupResult();
 }
 
 async function bridgeSetup(): Promise<BridgeSetup> {
@@ -144,6 +146,50 @@ async function startLaunchAgent(plistPath: string): Promise<void> {
   await execFileAsync("launchctl", ["bootout", target, plistPath]).catch(() => undefined);
   await execFileAsync("launchctl", ["bootstrap", target, plistPath]);
   await execFileAsync("launchctl", ["kickstart", "-k", `${target}/${launchAgentLabel}`]);
+}
+
+async function writeSetupResult(): Promise<void> {
+  const clientQueryReady = await teamSpeakClientQueryReady();
+  process.stdout.write("TeamSpeak bridge is installed and running in the background.\n");
+  if (clientQueryReady) {
+    process.stdout.write("TeamSpeak ClientQuery is active. Room detection should work when TeamSpeak is open.\n");
+    return;
+  }
+  process.stdout.write([
+    "",
+    "TeamSpeak ClientQuery is not active yet.",
+    "The bridge can check in to Studio McLeod, but it cannot detect your TeamSpeak room until ClientQuery is enabled.",
+    "",
+    "Open TeamSpeak 3, enable or install the ClientQuery plugin, then restart TeamSpeak 3.",
+    "After restarting TeamSpeak, rerun this installer or use Restart TeamSpeak Bridge in Studio McLeod.",
+    "",
+  ].join("\n"));
+}
+
+async function teamSpeakClientQueryReady(): Promise<boolean> {
+  const filePath = path.join(os.homedir(), "Library/Application Support/TeamSpeak 3/clientquery.ini");
+  const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
+  if (!fileExists) return false;
+  return await portIsListening("127.0.0.1", clientQueryPort);
+}
+
+function portIsListening(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 1000);
+    socket.on("connect", () => {
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
 }
 
 async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
