@@ -300,6 +300,8 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
 
 async function activeMiroBoardUrl(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
+  const desktopBoardUrl = await activeMiroDesktopBoardUrl();
+  if (desktopBoardUrl) return desktopBoardUrl;
   const applicationName = await frontmostApplicationName();
   if (!applicationName) return undefined;
   if (applicationName === "Safari") return activeSafariMiroBoardUrl();
@@ -345,11 +347,33 @@ async function activeSafariMiroBoardUrl(): Promise<string | undefined> {
 async function osascriptMiroBoardUrl(script: string[]): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync("osascript", script.flatMap((line) => ["-e", line]), { timeout: miroDetectionTimeoutMs });
-    const url = stdout.trim();
-    return url.includes("miro.com/app/board/") ? url : undefined;
+    return miroBoardUrlFromText(stdout);
   } catch {
     return undefined;
   }
+}
+
+async function activeMiroDesktopBoardUrl(): Promise<string | undefined> {
+  const filePath = path.join(os.homedir(), "Library/Application Support/RealtimeBoard/sentry/scope_v3.json");
+  try {
+    const contents = await fs.readFile(filePath, "utf8");
+    const value: unknown = JSON.parse(contents);
+    if (!objectRecord(value) || !objectRecord(value.scope) || !Array.isArray(value.scope.breadcrumbs)) return undefined;
+    const url = value.scope.breadcrumbs.reduce<string | undefined>((current, breadcrumb) => {
+      if (!objectRecord(breadcrumb) || !objectRecord(breadcrumb.data)) return current;
+      const url = typeof breadcrumb.data.url === "string" ? miroBoardUrlFromText(breadcrumb.data.url) : undefined;
+      return url ?? current;
+    }, undefined);
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
+function miroBoardUrlFromText(text: string): string | undefined {
+  const match = /https:\/\/miro\.com\/app\/board\/[^\s"'<>]+/.exec(text);
+  if (!match?.[0]) return undefined;
+  return match[0].replace(/[),.;]+$/, "");
 }
 
 interface ClientQueryConnection {
