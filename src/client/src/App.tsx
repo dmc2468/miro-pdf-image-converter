@@ -196,6 +196,36 @@ const modules: ModuleItem[] = [
   { id: "voice-commands", label: "Vectorworks voice commands", icon: Mic },
 ];
 
+const adminModules: ModuleItem[] = [
+  { id: "admin-users", label: "Users", icon: Users },
+  { id: "release-notes", label: "Release notes", icon: GitCommit },
+  { id: "sessions", label: "Sessions", icon: History },
+];
+
+function SidebarNavButton({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: ModuleItem;
+  active: boolean;
+  onNavigate: (module: Module) => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+        active ? "bg-ink text-white" : "text-muted hover:bg-stone-100 hover:text-ink"
+      }`}
+      onClick={() => onNavigate(item.id)}
+    >
+      <Icon size={18} className="shrink-0" />
+      {item.label}
+    </button>
+  );
+}
+
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
   "miro-board-share": "Miro board share",
@@ -292,64 +322,16 @@ function Sidebar({
 
       <nav className="flex-1 space-y-1 px-3 py-4">
         <p className="px-2 text-xs font-semibold uppercase tracking-wider text-muted">Modules</p>
-        {modules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <button
-              key={mod.id}
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                activeModule === mod.id
-                  ? "bg-ink text-white"
-                  : "text-muted hover:bg-stone-100 hover:text-ink"
-              }`}
-              onClick={() => onNavigate(mod.id)}
-            >
-              <Icon size={18} />
-              {mod.label}
-            </button>
-          );
-        })}
+        {modules.map((mod) => (
+          <SidebarNavButton key={mod.id} item={mod} active={activeModule === mod.id} onNavigate={onNavigate} />
+        ))}
 
         {role === "admin" ? (
           <>
             <p className="mt-6 px-2 text-xs font-semibold uppercase tracking-wider text-muted">Administration</p>
-            <button
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                activeModule === "admin-users"
-                  ? "bg-ink text-white"
-                  : "text-muted hover:bg-stone-100 hover:text-ink"
-              }`}
-              onClick={() => onNavigate("admin-users")}
-            >
-              <Users size={18} />
-              Users
-            </button>
-            <button
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                activeModule === "release-notes"
-                  ? "bg-ink text-white"
-                  : "text-muted hover:bg-stone-100 hover:text-ink"
-              }`}
-              onClick={() => onNavigate("release-notes")}
-            >
-              <GitCommit size={18} />
-              Release notes
-            </button>
-            <button
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                activeModule === "sessions"
-                  ? "bg-ink text-white"
-                  : "text-muted hover:bg-stone-100 hover:text-ink"
-              }`}
-              onClick={() => onNavigate("sessions")}
-            >
-              <History size={18} />
-              Sessions
-            </button>
+            {adminModules.map((mod) => (
+              <SidebarNavButton key={mod.id} item={mod} active={activeModule === mod.id} onNavigate={onNavigate} />
+            ))}
           </>
         ) : null}
       </nav>
