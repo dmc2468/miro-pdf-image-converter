@@ -683,8 +683,10 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
-  app.get("/teamspeak-bridge/install", (_request, response) => {
-    response.type("text/plain").send(teamSpeakBridgeInstallScript());
+  app.get("/teamspeak-bridge/install", (request, response) => {
+    const host = request.get("host");
+    const baseUrl = host ? `${request.protocol}://${host}` : config.frontendBaseUrl;
+    response.type("text/plain").send(`${teamSpeakBridgeInstallScript(baseUrl)}\n`);
   });
 
   const clientDir = path.resolve("dist/client");
@@ -719,12 +721,13 @@ function parseMeetingRoomId(value: unknown): MeetingRoomId {
   throw new HttpError(404, "Meeting room not found.");
 }
 
-function teamSpeakBridgeInstallScript(): string {
+function teamSpeakBridgeInstallScript(baseUrl: string): string {
   return [
     "set -e",
     "APP_DIR=\"$HOME/Library/Application Support/Studio McLeod/teamspeak-bridge\"",
     "REPO_DIR=\"$APP_DIR/repo\"",
     "REPO_URL=\"https://github.com/dmc2468/miro-pdf-image-converter.git\"",
+    `STUDIO_MCLEOD_BASE_URL="${shellEscape(baseUrl)}"`,
     "if ! command -v git >/dev/null 2>&1; then",
     "  echo \"Git is required. Open Terminal and run: xcode-select --install\"",
     "  exit 1",
@@ -749,8 +752,12 @@ function teamSpeakBridgeInstallScript(): string {
     "cd \"$REPO_DIR\"",
     "corepack enable",
     "corepack pnpm install --frozen-lockfile",
-    "corepack pnpm teamspeak:bridge:install",
+    "STUDIO_MCLEOD_BASE_URL=\"$STUDIO_MCLEOD_BASE_URL\" corepack pnpm teamspeak:bridge:install",
   ].join("\n");
+}
+
+function shellEscape(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
 function parseMeetingRoomInput(value: unknown): MeetingRoomInput {

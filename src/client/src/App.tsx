@@ -49,7 +49,11 @@ function currentModule(): Module {
 }
 
 function teamSpeakBridgeInstallCommand(): string {
-  return `curl -fsSL ${window.location.origin}/teamspeak-bridge/install | /bin/zsh`;
+  const installUrl = `${window.location.origin}/teamspeak-bridge/install`;
+  return [
+    `curl -fsSL ${installUrl} -o /tmp/studio-mcleod-teamspeak-install.zsh`,
+    "/bin/zsh /tmp/studio-mcleod-teamspeak-install.zsh",
+  ].join("\n");
 }
 
 export function App() {
