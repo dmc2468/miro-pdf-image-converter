@@ -1,4 +1,5 @@
 import type { AdminUser, ConversionJob, MeetingRoom, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, MeetingRoomsResponse, TeamSpeakStatusInput, UserRole, UserSession, VoiceCommand, VoiceCommandInput, VoiceCommandRunResult } from "../../shared/types";
+import type { PromotePropertySearchInput, PropertyConstraintsReport, PropertyConstraintsSearchInput, PropertyConstraintsSearchResponse, PropertySearchRecord, PropertySearchStatus, PropertySearchesResponse, SavePropertySearchResponse } from "../../shared/property-constraints";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -56,6 +57,38 @@ export function createJob(token: string, formData: FormData): Promise<{ job: Con
     method: "POST",
     token,
     body: formData,
+  });
+}
+
+export function searchPropertyConstraints(token: string, input: PropertyConstraintsSearchInput): Promise<PropertyConstraintsSearchResponse> {
+  return apiFetch<PropertyConstraintsSearchResponse>("/api/property-constraints/search", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function savePropertySearch(token: string, report: PropertyConstraintsReport): Promise<SavePropertySearchResponse> {
+  return apiFetch<SavePropertySearchResponse>("/api/property-searches", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ report }),
+  });
+}
+
+export function listPropertySearches(token: string, status?: PropertySearchStatus, query?: string): Promise<PropertySearchesResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (query?.trim()) params.set("q", query.trim());
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<PropertySearchesResponse>(`/api/property-searches${suffix}`, { token });
+}
+
+export function promotePropertySearch(token: string, searchId: string, input: PromotePropertySearchInput): Promise<{ search: PropertySearchRecord }> {
+  return apiFetch<{ search: PropertySearchRecord }>(`/api/property-searches/${searchId}/active-project`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
   });
 }
 

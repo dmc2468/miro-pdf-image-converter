@@ -15,6 +15,7 @@ import type { ObjectStore } from "./storage/objectStore.js";
 import { ConversionService } from "./services/conversion.js";
 import { isDrawingScale, isOrientation, isPaperSize } from "../shared/scaling.js";
 import type { ConversionJob, MeetingRoomBoardInput, MeetingRoomId, MeetingRoomInput, TeamSpeakStatusInput, VoiceCommandInput, VoiceCommandModifier, VoiceCommandRunResult } from "../shared/types.js";
+import { PROPERTY_PROJECT_TYPES, type PropertyConstraintSearchDepth, type PropertyConstraintsReport, type PropertyConstraintsSearchInput, type PropertyProjectType, type PropertySearchStatus } from "../shared/property-constraints.js";
 import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
@@ -22,6 +23,8 @@ import { loadSessions } from "./sessions.js";
 import { serializeMeetingRoom } from "./repositories/meeting-rooms.js";
 import { serializeTeamSpeakBridgeStatus } from "./repositories/teamspeak-bridges.js";
 import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
+import { createPropertyConstraintsReport } from "./services/property-constraints.js";
+import { serializePropertySearch } from "./repositories/property-searches.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -660,6 +663,72 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.post("/api/property-constraints/search", requireAuth, async (request, response, next) => {
+    try {
+      const input = parsePropertyConstraintsSearchInput(request.body);
+      response.json({ report: await createPropertyConstraintsReport(input) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/property-searches", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const { report } = request.body as { report?: PropertyConstraintsReport };
+      if (!report) {
+        throw new HttpError(400, "Property search report is required.");
+      }
+      const search = await repositories.propertySearches.create({ userId: user.id, report });
+      response.status(201).json({ search: serializePropertySearch(search) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/property-searches", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const status = propertySearchStatus(request.query.status);
+      const query = optionalString(request.query.q);
+      const searches = await repositories.propertySearches.listForUser(user.id, status, query);
+      response.json({ searches: searches.map(serializePropertySearch) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/property-searches/:searchId", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const search = await repositories.propertySearches.findByIdForUser(String(request.params.searchId), user.id);
+      if (!search) {
+        throw new HttpError(404, "Property search not found.");
+      }
+      response.json({ search: serializePropertySearch(search) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/property-searches/:searchId/active-project", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const { projectNumber } = request.body as { projectNumber?: string };
+      const search = await repositories.propertySearches.promoteToActiveProject(
+        String(request.params.searchId),
+        user.id,
+        requiredString(projectNumber, "Project number is required."),
+      );
+      if (!search) {
+        throw new HttpError(404, "Property search not found.");
+      }
+      response.json({ search: serializePropertySearch(search) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/version", async (_request, response, next) => {
     try {
       const info = await loadBuildInfo();
@@ -810,6 +879,61 @@ export function parseTeamSpeakStatusInput(value: unknown): TeamSpeakStatusInput 
     meetUrl: optionalMeetUrl(value.meetUrl),
     miroBoardUrl: optionalMiroBoardUrl(value.miroBoardUrl),
   };
+}
+
+function parsePropertyConstraintsSearchInput(value: unknown): PropertyConstraintsSearchInput {
+  if (!isObjectRecord(value)) {
+    throw new HttpError(400, "Property constraints search must be an object.");
+  }
+  const projectTypes = propertyProjectTypes(value.projectTypes, value.projectType);
+  return {
+    clientName: requiredString(value.clientName, "Client name is required."),
+    clientEmail: optionalString(value.clientEmail),
+    clientPhone: optionalString(value.clientPhone),
+    projectReference: optionalString(value.projectReference),
+    propertyAddress: requiredString(value.propertyAddress, "Property address is required."),
+    propertyPostcode: requiredString(value.propertyPostcode, "Postcode is required."),
+    searchDepth: propertyConstraintSearchDepth(value.searchDepth),
+    projectTypes,
+    proposedWorks: optionalString(value.proposedWorks),
+    knownLocalAuthority: optionalString(value.knownLocalAuthority),
+    notes: optionalString(value.notes),
+  };
+}
+
+function propertyConstraintSearchDepth(value: unknown): PropertyConstraintSearchDepth {
+  if (value === "quick" || value === "in_depth") return value;
+  throw new HttpError(400, "Search type must be quick or in-depth.");
+}
+
+function propertySearchStatus(value: unknown): PropertySearchStatus | undefined {
+  if (value === undefined) return undefined;
+  if (value === "saved_search" || value === "active_project") return value;
+  throw new HttpError(400, "Property search status is not supported.");
+}
+
+function propertyProjectTypes(value: unknown, legacyValue: unknown): PropertyProjectType[] {
+  const values = value === undefined
+    ? legacyValue === undefined ? [] : [requiredString(legacyValue, "Project type is not supported.")]
+    : propertyProjectTypeArray(value);
+  if (!values.length) {
+    throw new HttpError(400, "Select at least one project type.");
+  }
+  return values.map((item) => {
+    if (isPropertyProjectType(item)) return item;
+    throw new HttpError(400, "Project type is not supported.");
+  });
+}
+
+function propertyProjectTypeArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, "Project types must be a list.");
+  }
+  return value.map((item) => requiredString(item, "Project type is not supported."));
+}
+
+function isPropertyProjectType(value: string): value is PropertyProjectType {
+  return PROPERTY_PROJECT_TYPES.includes(value as PropertyProjectType);
 }
 
 function optionalNullableString(value: unknown): string | null | undefined {

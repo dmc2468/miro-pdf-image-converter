@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Check,
   ChevronDown,
   Copy,
+  Briefcase,
   Download,
   ExternalLink,
   FileArchive,
   FileText,
+  FolderOpen,
   GitCommit,
   History,
   Image,
@@ -16,6 +19,7 @@ import {
   Mic,
   MonitorUp,
   Play,
+  MapPinned,
   RefreshCw,
   Save,
   Search,
@@ -29,18 +33,23 @@ import {
 } from "lucide-react";
 import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "../../shared/scaling";
 import { CURRENT_TEAMSPEAK_BRIDGE_VERSION } from "../../shared/teamspeak-bridge";
+import { PROPERTY_PROJECT_TYPES, type ConstraintCheck, type ConstraintStatus, type PropertyConstraintSearchDepth, type PropertyConstraintsReport, type PropertyProjectType, type PropertySearchRecord, type PropertySearchStatus } from "../../shared/property-constraints";
 import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, TeamSpeakBridgeStatus, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
-import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listUsers, listVoiceCommands, login, loginWithMagicLink, runVoiceCommand, shareMeetingRoomBoard, updateUser, updateVoiceCommand } from "./api";
+import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listPropertySearches, listUsers, listVoiceCommands, login, loginWithMagicLink, promotePropertySearch, runVoiceCommand, savePropertySearch, searchPropertyConstraints, shareMeetingRoomBoard, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
 const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
 const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
-type Module = "miro-converter" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
+type Module = "miro-converter" | "property-search-new" | "property-search-saved" | "property-search-projects" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
 function currentModule(): Module {
   if (window.location.pathname.startsWith("/miro-board-share-tool")) return "meeting-rooms";
+  if (window.location.pathname.startsWith("/property-search/saved")) return "property-search-saved";
+  if (window.location.pathname.startsWith("/property-search/projects")) return "property-search-projects";
+  if (window.location.pathname.startsWith("/property-search/new")) return "property-search-new";
+  if (window.location.pathname.startsWith("/property-constraints")) return "property-search-new";
   if (window.location.pathname.startsWith("/meeting-rooms")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/voice-commands")) return "voice-commands";
   if (window.location.pathname.startsWith("/admin/users")) return "admin-users";
@@ -80,6 +89,9 @@ export function App() {
   function navigateTo(module: Module) {
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
+      "property-search-new": "/property-search/new",
+      "property-search-saved": "/property-search/saved",
+      "property-search-projects": "/property-search/projects",
       "meeting-rooms": "/meeting-rooms",
       "voice-commands": "/voice-commands",
       "admin-users": "/admin/users",
@@ -155,6 +167,12 @@ export function App() {
               <MeetingRoomsModule session={session} onSessionExpired={expireSession} />
             ) : activeModule === "voice-commands" ? (
               <VoiceCommandsModule session={session} onSessionExpired={expireSession} />
+            ) : activeModule === "property-search-new" ? (
+              <PropertyConstraintsModule session={session} onSessionExpired={expireSession} onNavigate={navigateTo} />
+            ) : activeModule === "property-search-saved" ? (
+              <PropertySearchRecordsModule session={session} status="saved_search" onSessionExpired={expireSession} />
+            ) : activeModule === "property-search-projects" ? (
+              <PropertySearchRecordsModule session={session} status="active_project" onSessionExpired={expireSession} />
             ) : (
               <MiroConverterModule session={session} onSessionExpired={expireSession} />
             )}
@@ -229,8 +247,94 @@ function SidebarNavButton({
   );
 }
 
+const propertySearchChildModules: ModuleItem[] = [
+  { id: "property-search-new", label: "New search", icon: Search },
+  { id: "property-search-saved", label: "Saved searches", icon: FolderOpen },
+  { id: "property-search-projects", label: "Active projects", icon: Briefcase },
+];
+
+function isPropertySearchModule(module: Module): boolean {
+  return module === "property-search-new" || module === "property-search-saved" || module === "property-search-projects";
+}
+
+function PropertySearchSidebarGroup({
+  activeModule,
+  onNavigate,
+}: {
+  activeModule: Module;
+  onNavigate: (module: Module) => void;
+}) {
+  const active = isPropertySearchModule(activeModule);
+  const [open, setOpen] = useState(active);
+  const visible = active || open;
+
+  useEffect(() => {
+    if (!active) setOpen(false);
+  }, [activeModule, active]);
+
+  function openNewSearch() {
+    setOpen(true);
+    onNavigate("property-search-new");
+  }
+
+  function collapseWhenInactive() {
+    if (!active) setOpen(false);
+  }
+
+  return (
+    <div onMouseEnter={() => setOpen(true)} onMouseLeave={collapseWhenInactive} onBlur={collapseWhenInactive}>
+      <button
+        type="button"
+        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+          active ? "bg-ink text-white" : "text-muted hover:bg-stone-100 hover:text-ink"
+        }`}
+        onClick={openNewSearch}
+        onFocus={() => setOpen(true)}
+      >
+        <MapPinned size={18} className="shrink-0" />
+        <span className="min-w-0 flex-1">Property Search</span>
+        <ChevronDown size={16} className={`shrink-0 transition-transform ${visible ? "rotate-0" : "-rotate-90"}`} />
+      </button>
+      {visible ? (
+        <div className="mt-1 space-y-1 pl-6">
+          {propertySearchChildModules.map((item) => (
+            <SidebarChildNavButton key={item.id} item={item} active={activeModule === item.id} onNavigate={onNavigate} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SidebarChildNavButton({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: ModuleItem;
+  active: boolean;
+  onNavigate: (module: Module) => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+        active ? "bg-ink text-white" : "text-muted hover:bg-stone-100 hover:text-ink"
+      }`}
+      onClick={() => onNavigate(item.id)}
+    >
+      <Icon size={15} className="shrink-0" />
+      {item.label}
+    </button>
+  );
+}
+
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
+  "property-search-new": "Property Search",
+  "property-search-saved": "Saved Searches",
+  "property-search-projects": "Active Projects",
   "meeting-rooms": "Meeting rooms",
   "voice-commands": "Vectorworks voice commands",
   "admin-users": "User management",
@@ -324,7 +428,9 @@ function Sidebar({
 
       <nav className="flex-1 space-y-1 px-3 py-4">
         <p className="px-2 text-xs font-semibold uppercase tracking-wider text-muted">Modules</p>
-        {modules.map((mod) => (
+        <SidebarNavButton item={modules[0]} active={activeModule === modules[0].id} onNavigate={onNavigate} />
+        <PropertySearchSidebarGroup activeModule={activeModule} onNavigate={onNavigate} />
+        {modules.slice(1).map((mod) => (
           <SidebarNavButton key={mod.id} item={mod} active={activeModule === mod.id} onNavigate={onNavigate} />
         ))}
 
@@ -614,6 +720,627 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
       </section>
     </div>
   );
+}
+
+function PropertyConstraintsModule({ session, onSessionExpired, onNavigate }: { session: UserSession; onSessionExpired: () => void; onNavigate: (module: Module) => void }) {
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [projectReference, setProjectReference] = useState("");
+  const [propertyAddress, setPropertyAddress] = useState("");
+  const [propertyPostcode, setPropertyPostcode] = useState("");
+  const [searchDepth, setSearchDepth] = useState<PropertyConstraintSearchDepth>("quick");
+  const [projectTypes, setProjectTypes] = useState<PropertyProjectType[]>(["House extension"]);
+  const [proposedWorks, setProposedWorks] = useState("");
+  const [knownLocalAuthority, setKnownLocalAuthority] = useState("");
+  const [notes, setNotes] = useState("");
+  const [report, setReport] = useState<PropertyConstraintsReport | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [savedMatches, setSavedMatches] = useState<PropertySearchRecord[]>([]);
+  const [activeProjectMatches, setActiveProjectMatches] = useState<PropertySearchRecord[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const query = propertySearchMatchQuery(clientName, propertyAddress);
+    if (query.length < 3) {
+      setSavedMatches([]);
+      setActiveProjectMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      Promise.all([
+        listPropertySearches(session.token, "saved_search", query),
+        listPropertySearches(session.token, "active_project", query),
+      ])
+        .then(([saved, active]) => {
+          if (cancelled) return;
+          setSavedMatches(saved.searches.slice(0, 3));
+          setActiveProjectMatches(active.searches.slice(0, 3));
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          if (isUnauthorised(error)) {
+            onSessionExpired();
+          }
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [clientName, onSessionExpired, propertyAddress, session.token]);
+
+  async function submitSearch() {
+    setBusy(true);
+    setMessage(null);
+    setCopyMessage(null);
+    try {
+      const result = await searchPropertyConstraints(session.token, {
+        clientName,
+        clientEmail: clientEmail || undefined,
+        clientPhone: clientPhone || undefined,
+        projectReference: projectReference || undefined,
+        propertyAddress,
+        propertyPostcode,
+        searchDepth,
+        projectTypes,
+        proposedWorks: proposedWorks || undefined,
+        knownLocalAuthority: knownLocalAuthority || undefined,
+        notes: notes || undefined,
+      });
+      setReport(result.report);
+      setSaveMessage(null);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not run the property search.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyReport() {
+    if (!report) return;
+    await navigator.clipboard.writeText(propertyConstraintsMarkdown(report));
+    setCopyMessage("Report copied as Markdown.");
+  }
+
+  async function saveCurrentSearch() {
+    if (!report) return;
+    setSavingSearch(true);
+    setSaveMessage(null);
+    try {
+      await savePropertySearch(session.token, report);
+      setSaveMessage("Search saved.");
+      const query = propertySearchMatchQuery(report.client.client_name, report.property.input_address);
+      const saved = await listPropertySearches(session.token, "saved_search", query);
+      setSavedMatches(saved.searches.slice(0, 3));
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setSaveMessage(error instanceof Error ? error.message : "Could not save the search.");
+    } finally {
+      setSavingSearch(false);
+    }
+  }
+
+  function exportJson() {
+    if (!report) return;
+    downloadText(propertyReportFileName(report, "json"), JSON.stringify(report, null, 2), "application/json");
+  }
+
+  function exportMarkdown() {
+    if (!report) return;
+    downloadText(propertyReportFileName(report, "md"), propertyConstraintsMarkdown(report), "text/markdown");
+  }
+
+  function toggleProjectType(value: PropertyProjectType) {
+    setProjectTypes((current) => current.includes(value)
+      ? current.filter((item) => item !== value)
+      : [...current, value]);
+  }
+
+  function updatePropertyAddress(value: string) {
+    setPropertyAddress(value);
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Property Search</h2>
+          <p className="text-sm text-muted">Create an early-stage planning, heritage, environmental, access and title prompt report.</p>
+        </div>
+        {report ? (
+          <div className="flex flex-wrap gap-2">
+            <button className="secondary-button" type="button" onClick={() => void copyReport()}>
+              <Copy size={16} />
+              Copy report
+            </button>
+            <button className="secondary-button" type="button" onClick={() => void saveCurrentSearch()} disabled={savingSearch}>
+              <Save size={16} />
+              {savingSearch ? "Saving" : "Save search"}
+            </button>
+            <button className="secondary-button" type="button" onClick={exportJson}>
+              <Download size={16} />
+              JSON
+            </button>
+            <button className="secondary-button" type="button" onClick={exportMarkdown}>
+              <FileText size={16} />
+              Markdown
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {message ? <div className="mb-5"><Alert message={message} onDismiss={() => setMessage(null)} /></div> : null}
+      {copyMessage ? <p className="mb-5 rounded-lg border border-line bg-white px-4 py-3 text-sm text-muted">{copyMessage}</p> : null}
+      {saveMessage ? <p className="mb-5 rounded-lg border border-line bg-white px-4 py-3 text-sm text-muted">{saveMessage}</p> : null}
+
+      <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <section className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          <div className="space-y-4">
+            <label className="field-label">
+              Client name <RequiredMarker />
+              <input className="field-input" value={clientName} onChange={(event) => setClientName(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Email address <OptionalMarker />
+              <input className="field-input" type="email" value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Phone number <OptionalMarker />
+              <input className="field-input" type="tel" value={clientPhone} onChange={(event) => setClientPhone(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Project reference <OptionalMarker />
+              <input className="field-input" value={projectReference} onChange={(event) => setProjectReference(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Property address <RequiredMarker />
+              <textarea className="field-input min-h-24 resize-y py-3" value={propertyAddress} placeholder="Include postcode if you have it" onChange={(event) => updatePropertyAddress(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Postcode <RequiredMarker />
+              <input
+                className="field-input"
+                value={propertyPostcode}
+                placeholder="Enter postcode manually"
+                onChange={(event) => setPropertyPostcode(event.target.value.toUpperCase())}
+                onBlur={() => setPropertyPostcode((current) => current.trim() ? formatPostcode(current) : "")}
+              />
+              <span className={`mt-2 block text-xs ${propertyPostcode ? "text-moss" : "text-muted"}`}>
+                {propertyPostcode
+                  ? "Postcode will be used for local authority lookup."
+                  : "No confirmed postcode found yet."}
+              </span>
+            </label>
+            <PropertySearchMatches
+              activeProjectMatches={activeProjectMatches}
+              savedMatches={savedMatches}
+              onOpenActiveProjects={() => onNavigate("property-search-projects")}
+              onOpenSavedSearches={() => onNavigate("property-search-saved")}
+            />
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink">Search type</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  className={`rounded-lg border px-4 py-3 text-left transition ${searchDepth === "quick" ? "border-ink bg-ink text-white" : "border-line bg-white text-ink hover:border-ink"}`}
+                  type="button"
+                  onClick={() => setSearchDepth("quick")}
+                >
+                  <span className="block text-sm font-semibold">Quick search</span>
+                  <span className={`mt-1 block text-xs ${searchDepth === "quick" ? "text-white/80" : "text-muted"}`}>Readily available sources and clear manual flags.</span>
+                </button>
+                <button
+                  className={`rounded-lg border px-4 py-3 text-left transition ${searchDepth === "in_depth" ? "border-ink bg-ink text-white" : "border-line bg-white text-ink hover:border-ink"}`}
+                  type="button"
+                  onClick={() => setSearchDepth("in_depth")}
+                >
+                  <span className="block text-sm font-semibold">In-depth search</span>
+                  <span className={`mt-1 block text-xs ${searchDepth === "in_depth" ? "text-white/80" : "text-muted"}`}>Adds local, title and planning-history prompts.</span>
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink">Project type <RequiredMarker /></p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {PROPERTY_PROJECT_TYPES.map((item) => {
+                  const selected = projectTypes.includes(item);
+                  return (
+                    <label
+                      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${selected ? "border-ink bg-ink text-white" : "border-line bg-white text-ink hover:border-ink"}`}
+                      key={item}
+                    >
+                      <input
+                        className="sr-only"
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleProjectType(item)}
+                      />
+                      <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${selected ? "border-white bg-white text-ink" : "border-line bg-white"}`}>
+                        {selected ? <Check size={12} /> : null}
+                      </span>
+                      <span>{item}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <label className="field-label">
+              Proposed works <OptionalMarker />
+              <textarea className="field-input min-h-20 resize-y py-3" value={proposedWorks} onChange={(event) => setProposedWorks(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Known local authority <OptionalMarker />
+              <input className="field-input" value={knownLocalAuthority} onChange={(event) => setKnownLocalAuthority(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Notes <OptionalMarker />
+              <textarea className="field-input min-h-20 resize-y py-3" value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </label>
+            <button className="primary-button w-full" type="button" disabled={busy || !clientName.trim() || !propertyAddress.trim() || !propertyPostcode.trim() || !projectTypes.length} onClick={() => void submitSearch()}>
+              {busy ? <RefreshCw className="animate-spin" size={18} /> : <Search size={18} />}
+              Run search
+            </button>
+            <p className="text-xs text-muted"><RequiredMarker /> Required field</p>
+          </div>
+        </section>
+
+        {report ? (
+          <PropertyConstraintsReportView report={report} />
+        ) : (
+          <section className="grid min-h-[520px] place-items-center rounded-xl border border-dashed border-line bg-white p-8 text-center">
+            <div className="max-w-md">
+              <MapPinned className="mx-auto text-muted" size={34} />
+              <h3 className="mt-4 text-base font-semibold text-ink">Ready for a property search</h3>
+              <p className="mt-2 text-sm text-muted">Enter the client and address, choose quick or in-depth, then generate a property search report.</p>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PropertySearchMatches({
+  activeProjectMatches,
+  savedMatches,
+  onOpenActiveProjects,
+  onOpenSavedSearches,
+}: {
+  activeProjectMatches: PropertySearchRecord[];
+  savedMatches: PropertySearchRecord[];
+  onOpenActiveProjects: () => void;
+  onOpenSavedSearches: () => void;
+}) {
+  if (!activeProjectMatches.length && !savedMatches.length) return null;
+  return (
+    <div className="rounded-lg border border-line bg-stone-50 p-3">
+      <p className="text-sm font-semibold text-ink">Existing record found</p>
+      <div className="mt-2 space-y-2">
+        {activeProjectMatches.length ? (
+          <PropertyMatchGroup label="Active Projects" matches={activeProjectMatches} onOpen={onOpenActiveProjects} />
+        ) : null}
+        {savedMatches.length ? (
+          <PropertyMatchGroup label="Saved Searches" matches={savedMatches} onOpen={onOpenSavedSearches} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function PropertyMatchGroup({ label, matches, onOpen }: { label: string; matches: PropertySearchRecord[]; onOpen: () => void }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+        <button className="text-xs font-semibold text-blue hover:underline" type="button" onClick={onOpen}>Open</button>
+      </div>
+      <div className="mt-1 space-y-1">
+        {matches.map((match) => (
+          <p className="truncate text-xs text-muted" key={match.id}>
+            {match.projectNumber ? `${match.projectNumber} | ` : ""}{match.clientName} | {match.propertyAddress}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PropertySearchRecordsModule({ session, status, onSessionExpired }: { session: UserSession; status: PropertySearchStatus; onSessionExpired: () => void }) {
+  const [query, setQuery] = useState("");
+  const [records, setRecords] = useState<PropertySearchRecord[]>([]);
+  const [selectedRecord, setSelectedRecord] = useState<PropertySearchRecord | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [projectNumber, setProjectNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+  const isActiveProjects = status === "active_project";
+
+  useEffect(() => {
+    void refreshRecords();
+  }, [query, status]);
+
+  async function refreshRecords() {
+    setBusy(true);
+    try {
+      const result = await listPropertySearches(session.token, status, query);
+      setRecords(result.searches);
+      setSelectedRecord((current) => current ? result.searches.find((item) => item.id === current.id) ?? current : result.searches[0] ?? null);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not load property records.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function promoteSelectedRecord() {
+    if (!selectedRecord) return;
+    setMessage(null);
+    try {
+      const result = await promotePropertySearch(session.token, selectedRecord.id, { projectNumber });
+      setSelectedRecord(result.search);
+      setProjectNumber("");
+      setMessage("Saved search moved to Active Projects.");
+      await refreshRecords();
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      setMessage(error instanceof Error ? error.message : "Could not create active project.");
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-ink">{isActiveProjects ? "Active Projects" : "Saved Searches"}</h2>
+        <p className="text-sm text-muted">{isActiveProjects ? "Search live project records by job number, address or client." : "Search saved property reports by address, postcode, client or project reference."}</p>
+      </div>
+
+      {message ? <div className="mb-5"><Alert message={message} onDismiss={() => setMessage(null)} /></div> : null}
+
+      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <section className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          <label className="field-label">
+            Search
+            <input className="field-input" value={query} placeholder="Client, address, postcode or project number" onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <div className="mt-4 space-y-2">
+            {busy ? <p className="text-sm text-muted">Loading...</p> : null}
+            {!busy && !records.length ? <p className="text-sm text-muted">No records found.</p> : null}
+            {records.map((record) => (
+              <button
+                className={`w-full rounded-lg border p-3 text-left transition ${selectedRecord?.id === record.id ? "border-ink bg-ink text-white" : "border-line bg-stone-50 text-ink hover:border-ink"}`}
+                type="button"
+                key={record.id}
+                onClick={() => setSelectedRecord(record)}
+              >
+                <span className="block truncate text-sm font-semibold">{record.projectNumber ?? record.clientName}</span>
+                <span className={`mt-1 block truncate text-xs ${selectedRecord?.id === record.id ? "text-white/80" : "text-muted"}`}>{record.propertyAddress}</span>
+                <span className={`mt-1 block text-xs ${selectedRecord?.id === record.id ? "text-white/80" : "text-muted"}`}>{formatDateTime(record.updatedAt)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {selectedRecord ? (
+          <section className="space-y-5">
+            <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-semibold text-ink">{selectedRecord.projectNumber ?? selectedRecord.clientName}</h3>
+                  <p className="mt-1 text-sm text-muted">{selectedRecord.propertyAddress}</p>
+                  <p className="mt-1 text-xs text-muted">{selectedRecord.postcode} | Saved {formatDateTime(selectedRecord.createdAt)}</p>
+                </div>
+                <StatusPill status={selectedRecord.status === "active_project" ? "green" : "grey"} label={selectedRecord.status === "active_project" ? "Active project" : "Saved search"} />
+              </div>
+              {!isActiveProjects ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <input className="field-input max-w-64" value={projectNumber} placeholder="Project number" onChange={(event) => setProjectNumber(event.target.value)} />
+                  <button className="primary-button" type="button" disabled={!projectNumber.trim()} onClick={() => void promoteSelectedRecord()}>
+                    <Briefcase size={16} />
+                    Convert to Active Project
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <PropertyConstraintsReportView report={selectedRecord.report} />
+          </section>
+        ) : (
+          <section className="grid min-h-[480px] place-items-center rounded-xl border border-dashed border-line bg-white p-8 text-center">
+            <div className="max-w-md">
+              <FolderOpen className="mx-auto text-muted" size={34} />
+              <h3 className="mt-4 text-base font-semibold text-ink">No record selected</h3>
+              <p className="mt-2 text-sm text-muted">Choose a property record from the list to view the saved report.</p>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PropertyConstraintsReportView({ report }: { report: PropertyConstraintsReport }) {
+  const summaryChecks = keyFindingChecks(report).slice(0, 6);
+
+  return (
+    <section className="space-y-5">
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-ink">Property Search</h3>
+            <p className="mt-1 text-sm text-ink">{report.client.client_name}</p>
+            {report.client.email || report.client.phone ? (
+              <p className="mt-1 text-xs text-muted">{[report.client.email, report.client.phone].filter(Boolean).join(" | ")}</p>
+            ) : null}
+            <p className="mt-1 text-sm text-muted">{report.property.resolved_address ?? report.property.input_address}</p>
+            <p className="mt-1 text-xs text-muted">Search date: {formatDateTime(report.search.search_date)} | {searchDepthLabel(report.search.search_depth)} | {report.search.tool_version}</p>
+          </div>
+          <StatusPill status={report.search.overall_risk} label={`Overall: ${constraintStatusLabel(report.search.overall_risk)}`} />
+        </div>
+        <div className="mt-5 rounded-lg border border-line bg-stone-50">
+          {propertyAtAGlanceItems(report).map((item) => (
+            <div className="grid gap-2 border-b border-line px-4 py-3 last:border-b-0 sm:grid-cols-[180px_minmax(0,1fr)_auto]" key={item.label}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">{item.label}</p>
+              <p className="min-w-0 text-sm font-medium text-ink">{item.value}</p>
+              {item.status ? <StatusPill status={item.status} label={constraintStatusLabel(item.status)} /> : null}
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {(["red", "amber", "green", "grey"] as ConstraintStatus[]).map((status) => (
+            <div className={`rounded-lg border px-4 py-3 ${constraintSummaryCardClass(status)}`} key={status}>
+              <p className="text-xs font-semibold uppercase tracking-wide">{constraintStatusLabel(status)}</p>
+              <p className="mt-1 text-2xl font-semibold text-ink">{propertyConstraintStatusCount(report, status)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {shouldShowTitleDetails(report) ? <PropertyTitleDetailsView report={report} /> : null}
+
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-ink">Key findings</h3>
+        <div className="mt-3 space-y-3">
+          {summaryChecks.length ? summaryChecks.map((check, index) => (
+            <PropertyConstraintFinding check={check} key={`${check.source}-${check.name ?? check.result}-${index}`} />
+          )) : <p className="text-sm text-muted">No key constraints in this result.</p>}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-ink">Recommended next steps</h3>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted">
+          {report.recommended_next_steps.map((step) => <li key={step}>{step}</li>)}
+        </ul>
+      </div>
+
+      <div className="space-y-3">
+        {propertyConstraintSections(report).map((section) => (
+          <details className="rounded-xl border border-line bg-white shadow-sm" key={section.title} open={section.defaultOpen}>
+            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-ink">{section.title}</summary>
+            <div className="space-y-3 border-t border-line p-5">
+              {section.checks.map((check, index) => (
+                <PropertyConstraintCheckRow check={check} key={`${section.title}-${check.source}-${check.name ?? check.result}-${index}`} />
+              ))}
+            </div>
+          </details>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-ink">Source links</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {report.source_links.map((source) => (
+            <a className="rounded-lg border border-line bg-stone-50 p-3 text-sm transition hover:border-ink" href={source.url} target="_blank" rel="noopener noreferrer" key={source.url}>
+              <span className="flex items-center gap-2 font-medium text-ink"><ExternalLink size={15} />{source.label}</span>
+              {source.notes ? <span className="mt-1 block text-xs text-muted">{source.notes}</span> : null}
+            </a>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-ink">Caveats</h3>
+        <div className="mt-3 space-y-3 text-sm text-muted">
+          {report.caveats.map((caveat) => <p key={caveat}>{caveat}</p>)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PropertyTitleDetailsView({ report }: { report: PropertyConstraintsReport }) {
+  const title = report.title_details;
+  const leaseValues = title.lease ? [
+    title.lease.term ? `Term: ${title.lease.term}` : undefined,
+    title.lease.start_date ? `Start: ${title.lease.start_date}` : undefined,
+    title.lease.end_date ? `End: ${title.lease.end_date}` : undefined,
+  ].filter(Boolean).join(" | ") : "";
+
+  return (
+    <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-semibold text-ink">Title details</h3>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <TitleDetailItem label="Tenure" value={titleTenureLabel(title.tenure)} />
+        <TitleDetailItem label="Title number" value={title.title_numbers.length ? title.title_numbers.join(", ") : "Not known"} />
+        <TitleDetailItem label="Lease" value={leaseValues || "Not known"} />
+        <TitleDetailItem label="Proprietor" value={title.proprietor?.name ?? "Not known"} />
+        <TitleDetailItem label="Proprietor type" value={titleProprietorTypeLabel(title.proprietor?.type ?? "unknown")} />
+        <TitleDetailItem label="Confidence" value={titleConfidenceLabel(title.confidence)} />
+      </div>
+      <p className="mt-3 text-xs text-muted">{title.notes}</p>
+    </div>
+  );
+}
+
+function TitleDetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-stone-50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-1 text-sm font-medium text-ink">{value}</p>
+    </div>
+  );
+}
+
+function PropertyConstraintFinding({ check }: { check: ConstraintCheck }) {
+  return (
+    <div className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-stone-50 p-3">
+      <StatusPill status={check.status} label={constraintStatusLabel(check.status)} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">{check.name ?? readableResult(check.result)}</p>
+        <p className="mt-1 text-sm text-muted">{check.architect_note}</p>
+      </div>
+    </div>
+  );
+}
+
+function PropertyConstraintCheckRow({ check }: { check: ConstraintCheck }) {
+  return (
+    <div className="rounded-lg border border-line bg-stone-50 p-4">
+      <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-ink">{check.name ?? readableResult(check.result)}</p>
+          <p className="mt-1 text-xs text-muted">{check.source}</p>
+        </div>
+        <div className="sm:justify-self-end">
+          <StatusPill status={check.status} label={`${constraintStatusLabel(check.status)} | ${readableResult(check.result)}`} />
+        </div>
+      </div>
+      <p className="mt-3 text-sm text-muted">{check.architect_note}</p>
+      {check.verification_note ? <p className="mt-2 text-xs text-muted">Verification: {check.verification_note}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+        <span>Confidence: {check.confidence}</span>
+        {check.distance_m !== null ? <span>Distance: {check.distance_m}m</span> : null}
+        {check.raw_reference ? <span>Reference: {check.raw_reference}</span> : null}
+        {check.source_url ? <a className="text-blue hover:underline" href={check.source_url} target="_blank" rel="noopener noreferrer">Source</a> : null}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status, label }: { status: ConstraintStatus; label: string }) {
+  const className: Record<ConstraintStatus, string> = {
+    red: "bg-red-100 text-red-700",
+    amber: "bg-amber-100 text-amber-800",
+    green: "bg-green-100 text-green-800",
+    grey: "bg-stone-200 text-muted",
+  };
+  return <span className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase ${className[status]}`}>{label}</span>;
 }
 
 function MeetingRoomsModule({ session, onSessionExpired }: { session: UserSession; onSessionExpired: () => void }) {
@@ -2948,6 +3675,247 @@ function csvLine(values: string[]): string {
   return values.map((value) => `"${value.replace(/"/g, "\"\"")}"`).join(",");
 }
 
+interface PropertyConstraintSection {
+  title: string;
+  defaultOpen: boolean;
+  checks: ConstraintCheck[];
+}
+
+interface PropertyAtAGlanceItem {
+  label: string;
+  value: string;
+  status?: ConstraintStatus;
+}
+
+function propertyAtAGlanceItems(report: PropertyConstraintsReport): PropertyAtAGlanceItem[] {
+  const ownership = report.legal_ownership.leasehold_freehold_flag;
+  const conservationArea = report.planning_heritage.conservation_area;
+  const listedBuilding = report.planning_heritage.listed_building;
+  return [
+    {
+      label: "Ownership type",
+      value: report.title_details.tenure !== "not_known" ? titleTenureLabel(report.title_details.tenure) : "Not known. Manual check required.",
+      status: ownership.status,
+    },
+    {
+      label: "Local authority",
+      value: report.property.local_authority ?? "Not detected",
+      status: report.property.local_authority ? undefined : "grey",
+    },
+    {
+      label: "Conservation area",
+      value: constraintCheckSummaryValue(conservationArea),
+      status: conservationArea.status,
+    },
+    {
+      label: "Listed building",
+      value: constraintCheckSummaryValue(listedBuilding),
+      status: listedBuilding.status,
+    },
+  ];
+}
+
+function propertySearchMatchQuery(clientName: string, propertyAddress: string): string {
+  return propertyAddress.trim() || clientName.trim();
+}
+
+function propertyConstraintSections(report: PropertyConstraintsReport): PropertyConstraintSection[] {
+  return [
+    { title: "Planning / Heritage", defaultOpen: true, checks: sortedConstraintChecks(Object.values(report.planning_heritage)) },
+    { title: "Trees / Ecology / Landscape", defaultOpen: false, checks: sortedConstraintChecks(Object.values(report.trees_ecology_landscape)) },
+    { title: "Flood / Ground / Environment", defaultOpen: false, checks: sortedConstraintChecks(Object.values(report.flood_ground_environment)) },
+    { title: "Planning Potential", defaultOpen: false, checks: sortedConstraintChecks(Object.values(report.planning_potential)) },
+    { title: "Access / Highways / Practical", defaultOpen: false, checks: sortedConstraintChecks(Object.values(report.access_highways_practical)) },
+    { title: "Legal / Ownership", defaultOpen: false, checks: sortedConstraintChecks(Object.values(report.legal_ownership)) },
+  ];
+}
+
+function sortedConstraintChecks(checks: ConstraintCheck[]): ConstraintCheck[] {
+  return [...checks].sort((left, right) => constraintStatusSortOrder(left.status) - constraintStatusSortOrder(right.status));
+}
+
+function propertyConstraintStatusCount(report: PropertyConstraintsReport, status: ConstraintStatus): number {
+  return propertyConstraintSections(report).flatMap((section) => section.checks).filter((check) => check.status === status).length;
+}
+
+function keyFindingChecks(report: PropertyConstraintsReport): ConstraintCheck[] {
+  return propertyConstraintSections(report)
+    .flatMap((section) => section.checks)
+    .sort((left, right) => constraintStatusSortOrder(left.status) - constraintStatusSortOrder(right.status));
+}
+
+function constraintStatusSortOrder(status: ConstraintStatus): number {
+  const order: Record<ConstraintStatus, number> = {
+    red: 0,
+    amber: 1,
+    green: 2,
+    grey: 3,
+  };
+  return order[status];
+}
+
+function constraintSummaryCardClass(status: ConstraintStatus): string {
+  const classes: Record<ConstraintStatus, string> = {
+    red: "border-red-200 bg-red-50 text-red-800",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    green: "border-green-200 bg-green-50 text-green-800",
+    grey: "border-line bg-stone-50 text-muted",
+  };
+  return classes[status];
+}
+
+function propertyConstraintsMarkdown(report: PropertyConstraintsReport): string {
+  const keyFindings = keyFindingChecks(report)
+    .map((check) => `- ${constraintStatusLabel(check.status)}: ${check.name ?? readableResult(check.result)} - ${readableResult(check.result)}. ${check.architect_note}`)
+    .slice(0, 10);
+  const detailSections = propertyConstraintSections(report).flatMap((section) => [
+    "",
+    `## ${section.title}`,
+    "",
+    ...section.checks.map((check) => [
+      `- ${constraintStatusLabel(check.status)}: ${check.name ?? readableResult(check.result)} - ${readableResult(check.result)}`,
+      `  Source: ${check.source}${check.source_url ? ` (${check.source_url})` : ""}`,
+      `  Note: ${check.architect_note}`,
+      check.verification_note ? `  Verification: ${check.verification_note}` : "",
+    ].filter(Boolean).join("\n")),
+  ]);
+  return [
+    "# Property Search",
+    "",
+    `Client: ${report.client.client_name}`,
+    ...(report.client.email ? [`Email: ${report.client.email}`] : []),
+    ...(report.client.phone ? [`Phone: ${report.client.phone}`] : []),
+    `Project reference: ${report.client.project_reference ?? "Not provided"}`,
+    `Property: ${report.property.resolved_address ?? report.property.input_address}`,
+    `Search date: ${formatDateTime(report.search.search_date)}`,
+    `Search type: ${searchDepthLabel(report.search.search_depth)}`,
+    `Overall risk: ${constraintStatusLabel(report.search.overall_risk)}`,
+    "",
+    "## At a glance",
+    "",
+    ...propertyAtAGlanceItems(report).map((item) => `- ${item.label}: ${item.value}${item.status ? ` (${constraintStatusLabel(item.status)})` : ""}`),
+    ...propertyTitleMarkdownLines(report),
+    "",
+    "## Key findings",
+    "",
+    ...(keyFindings.length ? keyFindings : ["- No key findings in this mock result."]),
+    "",
+    "## Recommended next steps",
+    "",
+    ...report.recommended_next_steps.map((step) => `- ${step}`),
+    ...detailSections,
+    "",
+    "## Source links",
+    "",
+    ...report.source_links.map((source) => `- ${source.label}: ${source.url}${source.notes ? ` - ${source.notes}` : ""}`),
+    "",
+    "## Caveat",
+    "",
+    ...report.caveats,
+  ].join("\n");
+}
+
+function propertyReportFileName(report: PropertyConstraintsReport, extension: "json" | "md"): string {
+  const client = report.client.client_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "client";
+  const date = report.search.search_date.slice(0, 10);
+  return `${date}-${client}-property-search.${extension}`;
+}
+
+function readableResult(value: string): string {
+  return value.replace(/_/g, " ");
+}
+
+function constraintCheckSummaryValue(check: ConstraintCheck): string {
+  if (check.result === "yes") return check.name ?? "Yes";
+  if (check.result === "not_found" || check.result === "no") return "No";
+  if (check.result === "manual_check_required") return "Manual check needed";
+  if (check.result === "possible") return check.name ? `Possible: ${check.name}` : "Possible";
+  if (check.result === "not_applicable") return "Not applicable";
+  return "Check failed";
+}
+
+function shouldShowTitleDetails(report: PropertyConstraintsReport): boolean {
+  return report.title_details.tenure !== "not_known";
+}
+
+function propertyTitleMarkdownLines(report: PropertyConstraintsReport): string[] {
+  if (!shouldShowTitleDetails(report)) return [];
+  return [
+    "",
+    "## Title details",
+    "",
+    `- Tenure: ${titleTenureLabel(report.title_details.tenure)}`,
+    `- Title number(s): ${report.title_details.title_numbers.length ? report.title_details.title_numbers.join(", ") : "Not known"}`,
+    `- Lease: ${titleLeaseMarkdownValue(report)}`,
+    `- Proprietor: ${report.title_details.proprietor?.name ?? "Not known"}`,
+    `- Proprietor type: ${titleProprietorTypeLabel(report.title_details.proprietor?.type ?? "unknown")}`,
+    `- Confidence: ${titleConfidenceLabel(report.title_details.confidence)}`,
+    `- Source: ${report.title_details.source}`,
+    `- Notes: ${report.title_details.notes}`,
+  ];
+}
+
+function titleTenureLabel(value: PropertyConstraintsReport["title_details"]["tenure"]): string {
+  const labels: Record<PropertyConstraintsReport["title_details"]["tenure"], string> = {
+    freehold: "Freehold",
+    leasehold: "Leasehold",
+    both_detected: "Both detected",
+    not_known: "Not known",
+  };
+  return labels[value];
+}
+
+function titleProprietorTypeLabel(value: NonNullable<PropertyConstraintsReport["title_details"]["proprietor"]>["type"]): string {
+  const labels: Record<NonNullable<PropertyConstraintsReport["title_details"]["proprietor"]>["type"], string> = {
+    private_individual: "Private individual",
+    company: "Company",
+    public_body: "Public body",
+    unknown: "Unknown",
+  };
+  return labels[value];
+}
+
+function titleConfidenceLabel(value: PropertyConstraintsReport["title_details"]["confidence"]): string {
+  const labels: Record<PropertyConstraintsReport["title_details"]["confidence"], string> = {
+    official_tenure: "Official tenure",
+    inferred_share_of_freehold: "Inferred share of freehold",
+    manual_check_required: "Manual check required",
+  };
+  return labels[value];
+}
+
+function titleLeaseMarkdownValue(report: PropertyConstraintsReport): string {
+  const lease = report.title_details.lease;
+  if (!lease) return "Not known";
+  const values = [
+    lease.term ? `Term: ${lease.term}` : undefined,
+    lease.start_date ? `Start: ${lease.start_date}` : undefined,
+    lease.end_date ? `End: ${lease.end_date}` : undefined,
+  ].filter(Boolean);
+  return values.length ? values.join("; ") : "Not known";
+}
+
+function constraintStatusLabel(status: ConstraintStatus): string {
+  const labels: Record<ConstraintStatus, string> = {
+    red: "Known constraint",
+    amber: "Light constraint",
+    green: "No constraint",
+    grey: "Info unavailable",
+  };
+  return labels[status];
+}
+
+function searchDepthLabel(value: PropertyConstraintSearchDepth): string {
+  return value === "in_depth" ? "In-depth search" : "Quick search";
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function downloadText(fileName: string, content: string, contentType: string) {
   const blob = new Blob([content], { type: contentType });
   const url = URL.createObjectURL(blob);
@@ -2977,6 +3945,20 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function isUnauthorised(error: unknown): boolean {
   return error instanceof ApiRequestError && error.statusCode === 401;
+}
+
+function RequiredMarker() {
+  return <span className="ml-1 text-sm font-semibold text-red-700" aria-label="Required">*</span>;
+}
+
+function OptionalMarker() {
+  return <span className="ml-1 text-xs font-normal text-muted">Optional</span>;
+}
+
+function formatPostcode(value: string): string {
+  const compact = value.toUpperCase().replace(/\s+/g, "");
+  if (compact.length <= 3) return compact;
+  return `${compact.slice(0, -3)} ${compact.slice(-3)}`;
 }
 
 function SelectField<T extends string>({
