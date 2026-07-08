@@ -748,6 +748,7 @@ function teamSpeakBridgeInstallScript(baseUrl: string): string {
     `STUDIO_MCLEOD_BASE_URL="${shellEscape(baseUrl)}"`,
     "trap 'rm -rf \"$DOWNLOAD_DIR\"' EXIT",
     "mkdir -p \"$APP_DIR\"",
+    "echo \"Studio McLeod will install its own Node runtime. Homebrew is not required.\"",
     "if [ ! -x \"$NODE_BIN\" ]; then",
     "  echo \"Downloading Studio McLeod bridge runtime...\"",
     "  NODE_ARCHIVE=\"$DOWNLOAD_DIR/node.tar.gz\"",

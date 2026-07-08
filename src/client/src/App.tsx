@@ -750,7 +750,9 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [restartingBridge, setRestartingBridge] = useState(false);
-  const currentStatus = statuses.find((status) => status.userId === session.user.id);
+  const firstTimePreview = new URLSearchParams(window.location.search).get("bridgePreview") === "first-time";
+  const previewStatuses = firstTimePreview ? [] : statuses;
+  const currentStatus = previewStatuses.find((status) => status.userId === session.user.id);
   const currentBridge = currentStatus ? bridgeStatusView(currentStatus, rooms) : null;
   const statusLabel = currentBridge?.label ?? "Not connected";
   const statusClassName = currentBridge?.className ?? "status status-pending";
@@ -781,7 +783,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-ink">{needsUpdate ? "Update TeamSpeak Bridge" : "Install TeamSpeak Bridge"}</h3>
-              <p className="mt-1 text-sm text-muted">{needsUpdate ? "A newer bridge is available. Copy the command, paste it into Terminal, and press Return." : "Install the local bridge once on this Mac. TeamSpeak ClientQuery must be enabled for room detection."}</p>
+              <p className="mt-1 text-sm text-muted">{needsUpdate ? "A newer bridge is available. Copy the command, paste it into Terminal, and press Return." : "Follow these first-time steps once on this Mac. Node is downloaded by the installer, so Homebrew is not needed."}</p>
             </div>
             <button
               className="secondary-button"
@@ -796,6 +798,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
               {needsUpdate ? "Update" : "Copy"}
             </button>
           </div>
+          {!needsUpdate ? <TeamSpeakBridgeOnboarding /> : null}
           {copyMessage ? <p className="mt-3 rounded-lg border border-line bg-stone-50 px-3 py-2 text-xs text-muted">{copyMessage}</p> : null}
         </section>
       ) : null}
@@ -809,7 +812,7 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
         <div className="mt-4 border-t border-line pt-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bridge check-ins</p>
           <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {statuses.length ? statuses.map((status) => {
+            {previewStatuses.length ? previewStatuses.map((status) => {
               const view = bridgeStatusView(status, rooms);
               return (
                 <div className="rounded-lg border border-line bg-stone-50 px-3 py-2" key={status.userId}>
@@ -836,6 +839,49 @@ function TeamSpeakBridgePanel({ rooms, session, statuses }: { rooms: MeetingRoom
           </div>
         ) : null}
       </section>
+      </div>
+    </div>
+  );
+}
+
+interface TeamSpeakBridgeOnboardingStep {
+  body: string;
+  title: string;
+}
+
+const teamSpeakBridgeOnboardingSteps: TeamSpeakBridgeOnboardingStep[] = [
+  {
+    title: "Enable ClientQuery",
+    body: "Open TeamSpeak 3, go to Preferences or Settings, find Addons or Plugins, enable ClientQuery, then restart TeamSpeak. If ClientQuery is not listed, install it from TeamSpeak Addons first.",
+  },
+  {
+    title: "Copy the bridge command",
+    body: "Use the Copy button above, open Terminal, paste the command, and press Return.",
+  },
+  {
+    title: "Sign in when asked",
+    body: "Enter the same Studio McLeod email and password used for this web app. The bridge then runs in the background.",
+  },
+  {
+    title: "Check the result",
+    body: "Return to this page. The bridge should show Running, and your Hangout room should appear when you move rooms in TeamSpeak.",
+  },
+];
+
+function TeamSpeakBridgeOnboarding() {
+  return (
+    <div className="mt-4 rounded-lg border border-line bg-stone-50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">First-time setup</p>
+      <div className="mt-3 grid gap-3">
+        {teamSpeakBridgeOnboardingSteps.map((step, index) => (
+          <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3" key={step.title}>
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{index + 1}</span>
+            <div>
+              <p className="text-sm font-medium text-ink">{step.title}</p>
+              <p className="mt-1 text-sm text-muted">{step.body}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
