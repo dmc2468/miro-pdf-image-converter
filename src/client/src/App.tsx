@@ -44,6 +44,13 @@ const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
 type Module = "miro-converter" | "property-search-new" | "property-search-saved" | "property-search-projects" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
+interface TileGridSummary {
+  rows: number;
+  columns: number;
+}
+
+type AlertVariant = "error" | "info";
+
 function currentModule(): Module {
   if (window.location.pathname.startsWith("/miro-board-share-tool")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/property-search/saved")) return "property-search-saved";
@@ -636,6 +643,8 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
   const [orientation, setOrientation] = useState<Orientation>("Landscape");
   const [drawingScale, setDrawingScale] = useState<DrawingScale>("1:100");
   const [message, setMessage] = useState<string | null>(null);
+  const [messageVariant, setMessageVariant] = useState<AlertVariant>("error");
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const targetWidth = useMemo(
@@ -657,6 +666,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
         onSessionExpired();
         return;
       }
+      setMessageVariant("error");
       setMessage(error instanceof Error ? error.message : "Could not load recent jobs.");
     } finally {
       setJobsLoading(false);
@@ -665,6 +675,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
 
   async function submitConversion() {
     if (selectedFiles.length === 0) {
+      setMessageVariant("error");
       setMessage("Select at least one PDF.");
       return;
     }
@@ -677,16 +688,19 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
 
     setBusy(true);
     setMessage(null);
+    setCompletionMessage(null);
     try {
       const result = await createJob(session.token, formData);
       setJobs((current) => [result.job, ...current.filter((job) => job._id !== result.job._id)]);
       setSelectedFiles([]);
+      setCompletionMessage(conversionCompletionMessage(result.job));
       await downloadJobOutput(session.token, result.job._id);
     } catch (error) {
       if (isUnauthorised(error)) {
         onSessionExpired();
         return;
       }
+      setMessageVariant("error");
       setMessage(error instanceof Error ? error.message : "Conversion failed.");
       await refreshJobs();
     } finally {
@@ -705,6 +719,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
           busy={busy}
           drawingScale={drawingScale}
           message={message}
+          messageVariant={messageVariant}
           orientation={orientation}
           paperSize={paperSize}
           selectedFiles={selectedFiles}
@@ -718,8 +733,38 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
         />
         <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onDelete={(id) => deleteJob(session.token, id).then(() => refreshJobs())} onError={setMessage} onSessionExpired={onSessionExpired} />
       </section>
+      {completionMessage ? <CompletionDialog message={completionMessage} onDismiss={() => setCompletionMessage(null)} /> : null}
     </div>
   );
+}
+
+function conversionCompletionMessage(job: ConversionJob): string {
+  const tileGrid = tileGridSummary(job.generatedImages);
+  if (!tileGrid) return "Conversion complete.";
+  return `Conversion complete. The image has been split into ${tileGrid.rows} rows and ${tileGrid.columns} columns due to Miro file size limitations. In Finder, select the files in name ascending order so they are easier to reassemble in Miro.`;
+}
+
+function tileGridSummary(images: ConversionJob["generatedImages"]): TileGridSummary | null {
+  const tileIndexes = images
+    .map((image) => image.originalFileName ?? image.key.split("/").at(-1) ?? image.key)
+    .map(tileIndex)
+    .filter((item): item is TileGridSummary => Boolean(item));
+
+  if (!tileIndexes.length) return null;
+
+  return {
+    rows: Math.max(...tileIndexes.map((tile) => tile.rows)),
+    columns: Math.max(...tileIndexes.map((tile) => tile.columns)),
+  };
+}
+
+function tileIndex(fileName: string): TileGridSummary | null {
+  const match = /_row(\d+)_col(\d+)\.jpg$/i.exec(fileName);
+  if (!match?.[1] || !match[2]) return null;
+  return {
+    rows: Number(match[1]),
+    columns: Number(match[2]),
+  };
 }
 
 function PropertyConstraintsModule({ session, onSessionExpired, onNavigate }: { session: UserSession; onSessionExpired: () => void; onNavigate: (module: Module) => void }) {
@@ -3176,6 +3221,7 @@ function ConverterPanel(props: {
   busy: boolean;
   drawingScale: DrawingScale;
   message: string | null;
+  messageVariant: AlertVariant;
   orientation: Orientation;
   paperSize: PaperSize;
   selectedFiles: File[];
@@ -3256,7 +3302,7 @@ function ConverterPanel(props: {
         </div>
       </section>
 
-      {props.message ? <Alert message={props.message} onDismiss={props.onDismissMessage} /> : null}
+      {props.message ? <Alert message={props.message} variant={props.messageVariant} onDismiss={props.onDismissMessage} /> : null}
     </div>
   );
 }
@@ -3986,9 +4032,28 @@ function SelectField<T extends string>({
   );
 }
 
-function Alert({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+function CompletionDialog({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4">
+      <div className="w-full max-w-md rounded-xl border border-line bg-white p-5 shadow-xl">
+        <p className="text-sm text-ink">{message}</p>
+        <div className="mt-5 flex justify-end">
+          <button className="primary-button" type="button" onClick={onDismiss}>
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Alert({ message, variant = "error", onDismiss }: { message: string; variant?: AlertVariant; onDismiss: () => void }) {
+  const classes: Record<AlertVariant, string> = {
+    error: "border-red-200 bg-red-50 text-red-800",
+    info: "border-blue/20 bg-blue/5 text-blue",
+  };
+  return (
+    <div className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${classes[variant]}`}>
       <span>{message}</span>
       <button className="icon-only shrink-0" type="button" title="Dismiss" onClick={onDismiss}>
         <X size={16} />

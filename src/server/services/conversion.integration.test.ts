@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Express } from "express";
 import { MemoryJobRepository } from "../repositories/jobs.js";
 import { LocalObjectStore } from "../storage/objectStore.js";
-import { ConversionService } from "./conversion.js";
+import { ConversionService, conversionFailureMessage, scaledDimensions, tileRegions } from "./conversion.js";
 
 function hasPoppler(): boolean {
   try {
@@ -90,5 +90,57 @@ describe.skipIf(!hasPoppler())("ConversionService parity", () => {
     const imagePath = path.join(tempRoot, "objects", job!.generatedImages[0].key);
     const metadata = await sharp(imagePath).metadata();
     expect(metadata.width).toBe(2098);
+  }, 60_000);
+});
+
+describe("conversionFailureMessage", () => {
+  it("turns libvips memory failures into an actionable message", () => {
+    expect(conversionFailureMessage(new Error("VipsJpeg: Insufficient memory (case 4)"), 20900)).toBe(
+      "The converter ran out of memory while creating the 20900px-wide JPEG. Please try again shortly; if it keeps happening, the production machine needs more memory for this drawing size.",
+    );
+  });
+
+  it("keeps non-memory conversion failures intact", () => {
+    expect(conversionFailureMessage(new Error("No pages were rendered from the uploaded PDF."), 20900)).toBe("No pages were rendered from the uploaded PDF.");
+  });
+});
+
+describe("Miro tile layout", () => {
+  it("keeps small images as a single Miro-safe tile", () => {
+    expect(tileRegions({ width: 2098, height: 2969 })).toEqual([
+      {
+        row: 1,
+        column: 1,
+        left: 0,
+        top: 0,
+        width: 2098,
+        height: 2969,
+      },
+    ]);
+  });
+
+  it("splits a large A3 landscape target into Miro-safe tiles", () => {
+    const dimensions = scaledDimensions({ width: 3508, height: 2480 }, 21000);
+    const tiles = tileRegions(dimensions);
+
+    expect(dimensions).toEqual({ width: 21000, height: 14846 });
+    expect(tiles).toHaveLength(20);
+    expect(tiles.every((tile) => tile.width <= 5600 && tile.height <= 3900 && tile.width * tile.height <= 15_900_000)).toBe(true);
+    expect(tiles.at(0)).toEqual({
+      row: 1,
+      column: 1,
+      left: 0,
+      top: 0,
+      width: 4200,
+      height: 3712,
+    });
+    expect(tiles.at(-1)).toEqual({
+      row: 4,
+      column: 5,
+      left: 16800,
+      top: 11136,
+      width: 4200,
+      height: 3710,
+    });
   });
 });
