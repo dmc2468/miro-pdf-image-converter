@@ -19,6 +19,6 @@ primary_region = "lhr"
     path = "/health"
 
 [[vm]]
-  memory = "2048mb"
+  memory = "512mb"
   cpu_kind = "shared"
   cpus = 1

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Express } from "express";
 import { MemoryJobRepository } from "../repositories/jobs.js";
 import { LocalObjectStore } from "../storage/objectStore.js";
-import { ConversionService, conversionFailureMessage, scaledDimensions, tileRegions } from "./conversion.js";
+import { ConversionService, conversionFailureMessage, scaledDimensions, tileRegions, tileSourceRegion } from "./conversion.js";
 
 function hasPoppler(): boolean {
   try {
@@ -120,7 +120,8 @@ describe("Miro tile layout", () => {
   });
 
   it("splits a large A3 landscape target into Miro-safe tiles", () => {
-    const dimensions = scaledDimensions({ width: 3508, height: 2480 }, 21000);
+    const sourceDimensions = { width: 3508, height: 2480 };
+    const dimensions = scaledDimensions(sourceDimensions, 21000);
     const tiles = tileRegions(dimensions);
 
     expect(dimensions).toEqual({ width: 21000, height: 14846 });
@@ -141,6 +142,25 @@ describe("Miro tile layout", () => {
       top: 11136,
       width: 4200,
       height: 3710,
+    });
+  });
+
+  it("maps final tiles back to source crops before resizing", () => {
+    const sourceDimensions = { width: 3508, height: 2480 };
+    const targetDimensions = scaledDimensions(sourceDimensions, 21000);
+    const tiles = tileRegions(targetDimensions);
+
+    expect(tileSourceRegion(tiles[0], sourceDimensions, targetDimensions)).toEqual({
+      left: 0,
+      top: 0,
+      width: 702,
+      height: 621,
+    });
+    expect(tileSourceRegion(tiles[tiles.length - 1], sourceDimensions, targetDimensions)).toEqual({
+      left: 2806,
+      top: 1860,
+      width: 702,
+      height: 620,
     });
   });
 });

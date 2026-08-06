@@ -34,6 +34,13 @@ interface TileRegion {
   height: number;
 }
 
+interface SourceRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 interface TileGrid {
   rows: number;
   columns: number;
@@ -208,14 +215,15 @@ export class ConversionService {
     for (const tile of tiles) {
       const outputName = outputImageName(input.baseName, input.multiPage, input.pageIndex, tiles.length > 1, tile);
       const outputPath = path.join(input.resizedDir, outputName);
+      const sourceRegion = tileSourceRegion(tile, sourceDimensions, targetDimensions);
       await sharp(input.renderedPath)
-        .resize({ width: targetDimensions.width, withoutEnlargement: false })
         .extract({
-          left: tile.left,
-          top: tile.top,
-          width: tile.width,
-          height: tile.height,
+          left: sourceRegion.left,
+          top: sourceRegion.top,
+          width: sourceRegion.width,
+          height: sourceRegion.height,
         })
+        .resize({ width: tile.width, height: tile.height, fit: "fill", withoutEnlargement: false })
         .jpeg({ quality: 95 })
         .toFile(outputPath);
 
@@ -259,6 +267,20 @@ export function tileRegions(dimensions: ImageDimensions): TileRegion[] {
   }
 
   return tiles;
+}
+
+export function tileSourceRegion(tile: TileRegion, sourceDimensions: ImageDimensions, targetDimensions: ImageDimensions): SourceRegion {
+  const left = Math.floor((tile.left / targetDimensions.width) * sourceDimensions.width);
+  const top = Math.floor((tile.top / targetDimensions.height) * sourceDimensions.height);
+  const right = Math.ceil(((tile.left + tile.width) / targetDimensions.width) * sourceDimensions.width);
+  const bottom = Math.ceil(((tile.top + tile.height) / targetDimensions.height) * sourceDimensions.height);
+
+  return {
+    left,
+    top,
+    width: Math.max(1, Math.min(sourceDimensions.width - left, right - left)),
+    height: Math.max(1, Math.min(sourceDimensions.height - top, bottom - top)),
+  };
 }
 
 function tileGrid(dimensions: ImageDimensions): TileGrid {
