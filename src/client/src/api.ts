@@ -60,6 +60,13 @@ export function createJob(token: string, formData: FormData): Promise<{ job: Con
   });
 }
 
+export function retryJob(token: string, jobId: string): Promise<{ job: ConversionJob; downloadUrl: string }> {
+  return apiFetch<{ job: ConversionJob; downloadUrl: string }>(`/api/jobs/${jobId}/retry`, {
+    method: "POST",
+    token,
+  });
+}
+
 export function searchPropertyConstraints(token: string, input: PropertyConstraintsSearchInput): Promise<PropertyConstraintsSearchResponse> {
   return apiFetch<PropertyConstraintsSearchResponse>("/api/property-constraints/search", {
     method: "POST",

@@ -35,7 +35,7 @@ import { DRAWING_SCALES, ORIENTATIONS, PAPER_SIZES, getTargetPixelWidth } from "
 import { CURRENT_TEAMSPEAK_BRIDGE_VERSION } from "../../shared/teamspeak-bridge";
 import { PROPERTY_PROJECT_TYPES, type ConstraintCheck, type ConstraintStatus, type PropertyConstraintSearchDepth, type PropertyConstraintsReport, type PropertyProjectType, type PropertySearchRecord, type PropertySearchStatus } from "../../shared/property-constraints";
 import type { AdminUser, ConversionJob, DrawingScale, MeetingRoom, MeetingRoomId, Orientation, PaperSize, TeamSpeakBridgeStatus, UserRole, UserSession, VoiceCommand, VoiceCommandActionType, VoiceCommandInput, VoiceCommandModifier, VoiceCommandTargetApp } from "../../shared/types";
-import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listPropertySearches, listUsers, listVoiceCommands, login, loginWithMagicLink, promotePropertySearch, runVoiceCommand, savePropertySearch, searchPropertyConstraints, shareMeetingRoomBoard, updateUser, updateVoiceCommand } from "./api";
+import { ApiRequestError, changePassword, clearMeetingRoomBoard, createJob, createMagicLink, createUser, createVoiceCommand, deleteJob, deleteUser, deleteVoiceCommand, downloadJobOutput, fetchReleaseNotes, fetchSessions, fetchVersion, importVoiceCommands, jobImageObjectUrl, joinMeetingRoom, leaveMeetingRoom, listJobs, listMeetingRooms, listPropertySearches, listUsers, listVoiceCommands, login, loginWithMagicLink, promotePropertySearch, retryJob, runVoiceCommand, savePropertySearch, searchPropertyConstraints, shareMeetingRoomBoard, updateUser, updateVoiceCommand } from "./api";
 
 const SESSION_KEY = "studio-mcleod-session";
 const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
@@ -708,6 +708,20 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
     }
   }
 
+  async function retryConversion(jobId: string) {
+    setMessage(null);
+    setCompletionMessage(null);
+    try {
+      const result = await retryJob(session.token, jobId);
+      setJobs((current) => [result.job, ...current.filter((job) => job._id !== result.job._id)]);
+      setCompletionMessage(conversionCompletionMessage(result.job));
+      await downloadJobOutput(session.token, result.job._id);
+    } catch (error) {
+      await refreshJobs();
+      throw error;
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-6">
@@ -731,7 +745,7 @@ function MiroConverterModule({ session, onSessionExpired }: { session: UserSessi
           onSubmit={submitConversion}
           onDismissMessage={() => setMessage(null)}
         />
-        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onDelete={(id) => deleteJob(session.token, id).then(() => refreshJobs())} onError={setMessage} onSessionExpired={onSessionExpired} />
+        <JobsPanel jobs={jobs} loading={jobsLoading} token={session.token} onRefresh={() => void refreshJobs()} onDelete={(id) => deleteJob(session.token, id).then(() => refreshJobs())} onRetry={retryConversion} onError={setMessage} onSessionExpired={onSessionExpired} />
       </section>
       {completionMessage ? <CompletionDialog message={completionMessage} onDismiss={() => setCompletionMessage(null)} /> : null}
     </div>
@@ -3333,6 +3347,7 @@ function JobsPanel({
   token,
   onRefresh,
   onDelete,
+  onRetry,
   onError,
   onSessionExpired,
 }: {
@@ -3341,6 +3356,7 @@ function JobsPanel({
   token: string;
   onRefresh: () => void;
   onDelete: (jobId: string) => Promise<void>;
+  onRetry: (jobId: string) => Promise<void>;
   onError: (message: string) => void;
   onSessionExpired: () => void;
 }) {
@@ -3361,16 +3377,17 @@ function JobsPanel({
         ) : jobs.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted">No jobs yet.</p>
         ) : (
-          jobs.map((job) => <JobRow job={job} token={token} onDelete={onDelete} onError={onError} onSessionExpired={onSessionExpired} key={job._id} />)
+          jobs.map((job) => <JobRow job={job} token={token} onDelete={onDelete} onRetry={onRetry} onError={onError} onSessionExpired={onSessionExpired} key={job._id} />)
         )}
       </div>
     </aside>
   );
 }
 
-function JobRow({ job, token, onDelete, onError, onSessionExpired }: { job: ConversionJob; token: string; onDelete: (jobId: string) => Promise<void>; onError: (message: string) => void; onSessionExpired: () => void }) {
+function JobRow({ job, token, onDelete, onRetry, onError, onSessionExpired }: { job: ConversionJob; token: string; onDelete: (jobId: string) => Promise<void>; onRetry: (jobId: string) => Promise<void>; onError: (message: string) => void; onSessionExpired: () => void }) {
   const convertedBy = job.user?.name ?? job.user?.email ?? job.userId;
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   async function handleDelete() {
     if (deleting) return;
@@ -3388,6 +3405,22 @@ function JobRow({ job, token, onDelete, onError, onSessionExpired }: { job: Conv
     }
   }
 
+  async function handleRetry() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await onRetry(job._id);
+    } catch (error) {
+      if (isUnauthorised(error)) {
+        onSessionExpired();
+        return;
+      }
+      onError(error instanceof Error ? error.message : "Could not run the job again.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return (
     <div className="border-b border-line px-5 py-4 last:border-b-0">
       <div className="flex items-start justify-between gap-3">
@@ -3400,6 +3433,17 @@ function JobRow({ job, token, onDelete, onError, onSessionExpired }: { job: Conv
         </div>
         <div className="flex items-center gap-2">
           <span className={`status status-${job.status}`}>{job.status}</span>
+          {job.status === "failed" ? (
+            <button
+              aria-label={retrying ? "Retrying job" : "Retry job"}
+              className="status min-w-[3.75rem] border border-[#2563eb] bg-white text-[#2563eb] transition hover:bg-[#eff6ff] disabled:cursor-wait disabled:opacity-60"
+              type="button"
+              disabled={retrying}
+              onClick={() => void handleRetry()}
+            >
+              {retrying ? "..." : "Retry"}
+            </button>
+          ) : null}
           <button
             type="button"
             title="Delete job"

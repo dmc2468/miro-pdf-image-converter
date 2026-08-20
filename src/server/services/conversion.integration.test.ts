@@ -91,6 +91,34 @@ describe.skipIf(!hasPoppler())("ConversionService parity", () => {
     const metadata = await sharp(imagePath).metadata();
     expect(metadata.width).toBe(2098);
   }, 60_000);
+
+  it("reruns a failed job from its stored source PDF", async () => {
+    const jobs = new MemoryJobRepository();
+    const store = new LocalObjectStore(path.join(tempRoot, "objects"));
+    const service = new ConversionService(jobs, store);
+    const sourceFile = await store.putFile({
+      key: "users/user-1/jobs/failed-job/source/sample.pdf",
+      filePath: uploadPath,
+      contentType: "application/pdf",
+      originalFileName: "sample.pdf",
+    });
+    const failedJob = await jobs.create({
+      userId: "user-1",
+      paperSize: "A4",
+      orientation: "Portrait",
+      drawingScale: "1:100",
+      targetPixelWidth: 2098,
+    });
+    await jobs.updateFiles(failedJob._id, failedJob.userId, { sourceFiles: [sourceFile] });
+    await jobs.updateStatus(failedJob._id, failedJob.userId, "failed", "The server restarted.");
+
+    const result = await service.retry({ userId: "user-1", job: (await jobs.findById(failedJob._id))! });
+
+    expect(result.job._id).not.toBe(failedJob._id);
+    expect(result.job.status).toBe("completed");
+    expect(result.job.generatedImages).toHaveLength(1);
+    expect((await jobs.findById(failedJob._id))?.status).toBe("failed");
+  }, 60_000);
 });
 
 describe("conversionFailureMessage", () => {
@@ -142,6 +170,21 @@ describe("ConversionService queue", () => {
     ]);
 
     expect(Math.max(...activeWrites)).toBe(1);
+  });
+});
+
+describe("ConversionService retry", () => {
+  it("rejects failed jobs whose source PDFs were not stored", async () => {
+    const jobs = new MemoryJobRepository();
+    const store = new LocalObjectStore(path.join(os.tmpdir(), "unused-converter-objects"));
+    const service = new ConversionService(jobs, store);
+    const job = await jobs.create({ userId: "user-1", paperSize: "A3", orientation: "Landscape", drawingScale: "1:100", targetPixelWidth: 4200 });
+    await jobs.updateStatus(job._id, job.userId, "failed", "The server restarted.");
+
+    await expect(service.retry({ userId: job.userId, job: (await jobs.findById(job._id))! })).rejects.toMatchObject({
+      statusCode: 409,
+      message: "No PDF stored in memory. Please re-upload.",
+    });
   });
 });
 

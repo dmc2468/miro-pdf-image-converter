@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import type { Express } from "express";
@@ -8,7 +11,7 @@ import type { ConversionSettings, StoredObject } from "../../shared/types.js";
 import { getTargetPixelWidth } from "../../shared/scaling.js";
 import { config } from "../config.js";
 import { HttpError } from "../errors.js";
-import { objectKey, removeDir, safeFilename, safeStem } from "../utils/files.js";
+import { ensureDir, objectKey, removeDir, safeFilename, safeStem } from "../utils/files.js";
 import type { JobRepository, JobRecord } from "../repositories/jobs.js";
 import type { ObjectStore } from "../storage/objectStore.js";
 import { createZip } from "./zip.js";
@@ -75,6 +78,33 @@ export class ConversionService {
     const conversion = this.conversionTail.then(() => this.runConversion(input));
     this.conversionTail = conversion.then(() => undefined, () => undefined);
     return conversion;
+  }
+
+  async retry(input: {
+    userId: string;
+    job: JobRecord;
+  }): Promise<{ jobId: string; job: JobRecord; downloadUrl: string | null }> {
+    if (input.job.status !== "failed") {
+      throw new HttpError(409, "Only failed jobs can be run again.");
+    }
+    if (input.job.sourceFiles.length === 0) {
+      throw new HttpError(409, "No PDF stored in memory. Please re-upload.");
+    }
+
+    const files = await this.restoreSourceFiles(input.job.sourceFiles);
+    try {
+      return await this.convert({
+        userId: input.userId,
+        files,
+        settings: {
+          paperSize: input.job.paperSize,
+          orientation: input.job.orientation,
+          drawingScale: input.job.drawingScale,
+        },
+      });
+    } finally {
+      await removeDir(files[0].destination);
+    }
   }
 
   private async runConversion(input: {
@@ -171,6 +201,37 @@ export class ConversionService {
         }),
       ),
     );
+  }
+
+  private async restoreSourceFiles(sourceFiles: StoredObject[]): Promise<Express.Multer.File[]> {
+    const retryId = randomUUID();
+    const retryDir = path.join(config.tempDir, "uploads", retryId);
+    const restoredFiles: Express.Multer.File[] = [];
+    await ensureDir(retryDir);
+
+    try {
+      for (const [index, sourceFile] of sourceFiles.entries()) {
+        const originalname = safeFilename(sourceFile.originalFileName ?? `drawing-${index + 1}.pdf`);
+        const filePath = path.join(retryDir, `${index + 1}-${originalname}`);
+        const source = await this.objectStore.getReadStream(sourceFile.key);
+        await pipeline(source, createWriteStream(filePath));
+        const stats = await fs.stat(filePath);
+        restoredFiles.push({
+          fieldname: "files",
+          originalname,
+          encoding: "7bit",
+          mimetype: "application/pdf",
+          destination: retryDir,
+          filename: path.basename(filePath),
+          path: filePath,
+          size: stats.size,
+        } as Express.Multer.File);
+      }
+      return restoredFiles;
+    } catch (error) {
+      await removeDir(retryDir);
+      throw error;
+    }
   }
 
   private async renderAndResize(input: {

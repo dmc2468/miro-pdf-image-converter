@@ -592,6 +592,24 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.post("/api/jobs/:jobId/retry", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const job = await findJobForRequestUser(repositories, String(request.params.jobId), user);
+      if (!job) {
+        throw new HttpError(404, "Job not found.");
+      }
+
+      const result = await conversionService.retry({ userId: user.id, job });
+      response.status(201).json({
+        job: serializeJob(result.job),
+        downloadUrl: result.downloadUrl,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/jobs/:jobId/download", requireAuth, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;

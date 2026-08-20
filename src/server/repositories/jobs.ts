@@ -2,6 +2,13 @@ import type { Collection, Db } from "mongodb";
 import { randomUUID } from "node:crypto";
 import type { ConversionJob, DrawingScale, JobStatus, Orientation, PaperSize, StoredObject } from "../../shared/types.js";
 
+const INTERRUPTED_JOB_MESSAGE = "The conversion was interrupted when the server restarted. Please run it again.";
+const INTERRUPTED_JOB_WITH_SOURCES_MESSAGE = "The conversion was interrupted when the server restarted. Use Retry to run it again.";
+const INTERRUPTED_JOB_WITHOUT_SOURCES_MESSAGE = "No PDF stored in memory. Please re-upload.";
+const PREVIOUS_INTERRUPTED_JOB_WITH_SOURCES_MESSAGE = "The conversion was interrupted when the server restarted. Use Run again to retry it.";
+const PREVIOUS_INTERRUPTED_JOB_WITHOUT_SOURCES_MESSAGE = "The conversion was interrupted before its source PDFs were stored. Please upload them again.";
+const INTERRUPTED_JOB_MESSAGES = [INTERRUPTED_JOB_MESSAGE, PREVIOUS_INTERRUPTED_JOB_WITH_SOURCES_MESSAGE, PREVIOUS_INTERRUPTED_JOB_WITHOUT_SOURCES_MESSAGE];
+
 export interface JobRecord extends Omit<ConversionJob, "createdAt" | "updatedAt" | "completedAt"> {
   createdAt: Date;
   updatedAt: Date;
@@ -54,10 +61,18 @@ export class MongoJobRepository implements JobRepository {
       {
         $set: {
           status: "failed",
-          errorMessage: "The conversion was interrupted when the server restarted. Please run it again.",
+          errorMessage: INTERRUPTED_JOB_MESSAGE,
           updatedAt: new Date(),
         },
       },
+    );
+    await this.collection.updateMany(
+      { status: "failed", errorMessage: { $in: INTERRUPTED_JOB_MESSAGES }, "sourceFiles.0": { $exists: true } },
+      { $set: { errorMessage: INTERRUPTED_JOB_WITH_SOURCES_MESSAGE } },
+    );
+    await this.collection.updateMany(
+      { status: "failed", errorMessage: { $in: INTERRUPTED_JOB_MESSAGES }, "sourceFiles.0": { $exists: false } },
+      { $set: { errorMessage: INTERRUPTED_JOB_WITHOUT_SOURCES_MESSAGE } },
     );
   }
 
@@ -146,8 +161,12 @@ export class MemoryJobRepository implements JobRepository {
     for (const job of this.jobs.values()) {
       if (job.status !== "pending" && job.status !== "processing") continue;
       job.status = "failed";
-      job.errorMessage = "The conversion was interrupted when the server restarted. Please run it again.";
+      job.errorMessage = INTERRUPTED_JOB_MESSAGE;
       job.updatedAt = now;
+    }
+    for (const job of this.jobs.values()) {
+      if (job.status !== "failed" || !job.errorMessage || !INTERRUPTED_JOB_MESSAGES.includes(job.errorMessage)) continue;
+      job.errorMessage = job.sourceFiles.length ? INTERRUPTED_JOB_WITH_SOURCES_MESSAGE : INTERRUPTED_JOB_WITHOUT_SOURCES_MESSAGE;
     }
   }
 
