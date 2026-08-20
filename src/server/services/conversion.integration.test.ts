@@ -105,6 +105,46 @@ describe("conversionFailureMessage", () => {
   });
 });
 
+describe("ConversionService queue", () => {
+  it("runs only one conversion at a time", async () => {
+    const jobs = new MemoryJobRepository();
+    const activeWrites: number[] = [];
+    let active = 0;
+    const store = {
+      async putFile(input: { key: string; filePath: string; contentType: string; originalFileName?: string }) {
+        active += 1;
+        activeWrites.push(active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return {
+          key: input.key,
+          contentType: input.contentType,
+          originalFileName: input.originalFileName,
+          sizeBytes: 1,
+        };
+      },
+      async getReadStream() {
+        throw new Error("Not needed by this test.");
+      },
+      async exists() {
+        return false;
+      },
+    };
+    const service = new ConversionService(jobs, store);
+    const missingFile = (name: string) => ({
+      originalname: name,
+      path: `/missing/${name}`,
+    } as Express.Multer.File);
+
+    await Promise.allSettled([
+      service.convert({ userId: "user-1", files: [missingFile("one.pdf")], settings: { paperSize: "A4", orientation: "Portrait", drawingScale: "1:100" } }),
+      service.convert({ userId: "user-2", files: [missingFile("two.pdf")], settings: { paperSize: "A4", orientation: "Portrait", drawingScale: "1:100" } }),
+    ]);
+
+    expect(Math.max(...activeWrites)).toBe(1);
+  });
+});
+
 describe("Miro tile layout", () => {
   it("keeps small images as a single Miro-safe tile", () => {
     expect(tileRegions({ width: 2098, height: 2969 })).toEqual([

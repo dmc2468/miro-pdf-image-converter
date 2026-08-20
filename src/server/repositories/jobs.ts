@@ -23,6 +23,7 @@ export interface JobRepository {
   delete(id: string): Promise<void>;
   listRecent(): Promise<JobRecord[]>;
   listForUser(userId: string): Promise<JobRecord[]>;
+  failInterrupted(): Promise<void>;
   ensureIndexes(): Promise<void>;
 }
 
@@ -45,6 +46,19 @@ export class MongoJobRepository implements JobRepository {
   async ensureIndexes(): Promise<void> {
     await this.collection.createIndex({ userId: 1, createdAt: -1 });
     await this.collection.createIndex({ status: 1 });
+  }
+
+  async failInterrupted(): Promise<void> {
+    await this.collection.updateMany(
+      { status: { $in: ["pending", "processing"] } },
+      {
+        $set: {
+          status: "failed",
+          errorMessage: "The conversion was interrupted when the server restarted. Please run it again.",
+          updatedAt: new Date(),
+        },
+      },
+    );
   }
 
   async create(input: {
@@ -125,6 +139,16 @@ export class MemoryJobRepository implements JobRepository {
 
   async ensureIndexes(): Promise<void> {
     return undefined;
+  }
+
+  async failInterrupted(): Promise<void> {
+    const now = new Date();
+    for (const job of this.jobs.values()) {
+      if (job.status !== "pending" && job.status !== "processing") continue;
+      job.status = "failed";
+      job.errorMessage = "The conversion was interrupted when the server restarted. Please run it again.";
+      job.updatedAt = now;
+    }
   }
 
   async create(input: {

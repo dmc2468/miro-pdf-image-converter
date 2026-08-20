@@ -60,12 +60,24 @@ interface RenderedPageInput {
 }
 
 export class ConversionService {
+  private conversionTail: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly jobs: JobRepository,
     private readonly objectStore: ObjectStore,
   ) {}
 
   async convert(input: {
+    userId: string;
+    files: Express.Multer.File[];
+    settings: ConversionSettings;
+  }): Promise<{ jobId: string; job: JobRecord; downloadUrl: string | null }> {
+    const conversion = this.conversionTail.then(() => this.runConversion(input));
+    this.conversionTail = conversion.then(() => undefined, () => undefined);
+    return conversion;
+  }
+
+  private async runConversion(input: {
     userId: string;
     files: Express.Multer.File[];
     settings: ConversionSettings;

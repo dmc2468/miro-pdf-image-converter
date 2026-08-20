@@ -8,6 +8,7 @@ import { ensureDir } from "./utils/files.js";
 async function main(): Promise<void> {
   await ensureDir(config.tempDir);
   const repositories = await createRepositories();
+  await repositories.jobs.failInterrupted();
   const objectStore = await createObjectStore();
   const app = createApp(repositories, objectStore);
 
