@@ -20,7 +20,7 @@ import { logger } from "./logger.js";
 import { rateLimit } from "./rateLimiter.js";
 import { loadBuildInfo } from "./release-notes.js";
 import { loadSessions } from "./sessions.js";
-import { serializeMeetingRoom } from "./repositories/meeting-rooms.js";
+import { serializeMeetingRoom, type MeetingRoomRecord } from "./repositories/meeting-rooms.js";
 import { serializeTeamSpeakBridgeStatus } from "./repositories/teamspeak-bridges.js";
 import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
 import { createPropertyConstraintsReport } from "./services/property-constraints.js";
@@ -484,7 +484,8 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
           await repositories.meetingRooms.leave(roomId, user.id);
         }
         if (activeRoomId) {
-          await repositories.meetingRooms.join(activeRoomId, {
+          const roomBeforeJoin = await repositories.meetingRooms.findById(activeRoomId);
+          const roomAfterJoin = await repositories.meetingRooms.join(activeRoomId, {
             userId: user.id,
             email: user.email,
             name: storedUser?.name,
@@ -493,7 +494,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
           if (input.meetUrl !== undefined) {
             await repositories.meetingRooms.update(activeRoomId, { meetUrl: input.meetUrl ?? "" });
           }
-          if (input.miroBoardUrl) {
+          if (input.miroBoardUrl && roomAfterJoin && shouldShareTeamSpeakMiroBoard(roomBeforeJoin, roomAfterJoin, user.id)) {
             await repositories.meetingRooms.shareBoard(activeRoomId, {
               url: input.miroBoardUrl,
               sharedByUserId: user.id,
@@ -803,6 +804,13 @@ function serializeJobWithUser(job: JobRecord, user: UserRecord | null): Conversi
       name: user.name,
     } : undefined,
   };
+}
+
+export function shouldShareTeamSpeakMiroBoard(roomBeforeJoin: MeetingRoomRecord | null, roomAfterJoin: MeetingRoomRecord, userId: string): boolean {
+  if (roomAfterJoin.miroBoard) return false;
+  const firstParticipant = [...roomAfterJoin.participants].sort((left, right) => left.joinedAt.localeCompare(right.joinedAt))[0];
+  if (firstParticipant?.userId !== userId) return false;
+  return roomBeforeJoin?.miroBoard === undefined;
 }
 
 function parseMeetingRoomId(value: unknown): MeetingRoomId {

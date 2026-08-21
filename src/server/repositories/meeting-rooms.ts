@@ -99,7 +99,10 @@ export class MongoMeetingRoomRepository implements MeetingRoomRepository {
   async join(id: MeetingRoomId, participant: MeetingRoomParticipant): Promise<MeetingRoomRecord | null> {
     const room = await this.findById(id);
     if (!room) return null;
-    const participants = [participant, ...room.participants.filter((item) => item.userId !== participant.userId)];
+    const existingParticipant = room.participants.find((item) => item.userId === participant.userId);
+    const participants = existingParticipant
+      ? room.participants.map((item) => (item.userId === participant.userId ? { ...item, email: participant.email, name: participant.name } : item))
+      : [...room.participants, participant];
     await this.collection.updateOne({ id }, { $set: { participants, updatedAt: new Date() } });
     return this.findById(id);
   }
@@ -179,7 +182,10 @@ export class MemoryMeetingRoomRepository implements MeetingRoomRepository {
   async join(id: MeetingRoomId, participant: MeetingRoomParticipant): Promise<MeetingRoomRecord | null> {
     const room = await this.findById(id);
     if (!room) return null;
-    room.participants = [participant, ...room.participants.filter((item) => item.userId !== participant.userId)];
+    const existingParticipant = room.participants.find((item) => item.userId === participant.userId);
+    room.participants = existingParticipant
+      ? room.participants.map((item) => (item.userId === participant.userId ? { ...item, email: participant.email, name: participant.name } : item))
+      : [...room.participants, participant];
     room.updatedAt = new Date();
     return room;
   }

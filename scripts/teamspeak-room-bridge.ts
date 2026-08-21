@@ -65,17 +65,6 @@ interface TeamSpeakStatusResponse {
   rooms: MeetingRoom[];
 }
 
-interface MiroStorageCandidate {
-  filePath: string;
-  modifiedAt: number;
-}
-
-interface MiroStorageBoardMatch {
-  index: number;
-  modifiedAt: number;
-  url: string;
-}
-
 interface UserSessionResponse {
   token: string;
 }
@@ -94,7 +83,7 @@ const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
 const clientQueryTimeoutMs = 2_500;
 const miroDetectionTimeoutMs = 750;
-const miroOpenDelayMs = 7_000;
+const miroOpenDelayMs = 3_000;
 const rememberedMiroBoardMs = 8 * 60 * 60 * 1000;
 const bridgeHeartbeatMs = 10_000;
 const execFileAsync = promisify(execFile);
@@ -311,10 +300,9 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
 
 async function activeMiroBoardUrl(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
-  const desktopBoardUrl = await activeMiroDesktopBoardUrl();
-  if (desktopBoardUrl) return desktopBoardUrl;
   const applicationName = await frontmostApplicationName();
   if (!applicationName) return undefined;
+  if (applicationName === "Miro") return activeMiroDesktopBoardUrl();
   if (applicationName === "Safari") return activeSafariMiroBoardUrl();
   if (["Google Chrome", "Brave Browser", "Microsoft Edge", "Arc"].includes(applicationName)) {
     return activeChromiumMiroBoardUrl(applicationName);
@@ -365,65 +353,13 @@ async function osascriptMiroBoardUrl(script: string[]): Promise<string | undefin
 }
 
 async function activeMiroDesktopBoardUrl(): Promise<string | undefined> {
-  const candidates = await miroDesktopStorageCandidates();
-  let currentMatch: MiroStorageBoardMatch | undefined;
-  for (const candidate of candidates) {
-    const match = await miroBoardMatchFromFile(candidate);
-    if (!match) continue;
-    if (!currentMatch || match.modifiedAt > currentMatch.modifiedAt || (match.modifiedAt === currentMatch.modifiedAt && match.index > currentMatch.index)) {
-      currentMatch = match;
-    }
-  }
-  return currentMatch?.url;
-}
-
-async function miroDesktopStorageCandidates(): Promise<MiroStorageCandidate[]> {
-  const root = path.join(os.homedir(), "Library/Application Support/RealtimeBoard");
-  const directFiles = [
-    path.join(root, "settings.json"),
-    path.join(root, "sentry/scope_v3.json"),
-  ];
-  const levelDbDirectories = [
-    path.join(root, "Local Storage/leveldb"),
-    path.join(root, "Session Storage"),
-  ];
-  const directCandidates = await Promise.all(directFiles.map(miroStorageCandidate));
-  const levelDbCandidates = await Promise.all(levelDbDirectories.map(miroLevelDbCandidates));
-  return [...directCandidates.filter(isDefined), ...levelDbCandidates.flat()]
-    .filter((candidate) => Date.now() - candidate.modifiedAt < rememberedMiroBoardMs)
-    .sort((left, right) => right.modifiedAt - left.modifiedAt)
-    .slice(0, 12);
-}
-
-async function miroStorageCandidate(filePath: string): Promise<MiroStorageCandidate | undefined> {
+  const filePath = path.join(os.homedir(), "Library/Application Support/RealtimeBoard/sentry/scope_v3.json");
   try {
-    const stats = await fs.stat(filePath);
-    if (!stats.isFile() || stats.size <= 0 || stats.size > 2_000_000) return undefined;
-    return { filePath, modifiedAt: stats.mtimeMs };
-  } catch {
-    return undefined;
-  }
-}
-
-async function miroLevelDbCandidates(directory: string): Promise<MiroStorageCandidate[]> {
-  try {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    const candidates = await Promise.all(entries
-      .filter((entry) => entry.isFile() && /\.(log|ldb)$/.test(entry.name))
-      .map((entry) => miroStorageCandidate(path.join(directory, entry.name))));
-    return candidates.filter(isDefined);
-  } catch {
-    return [];
-  }
-}
-
-async function miroBoardMatchFromFile(candidate: MiroStorageCandidate): Promise<MiroStorageBoardMatch | undefined> {
-  try {
-    const contents = await fs.readFile(candidate.filePath, "utf8");
+    const contents = await fs.readFile(filePath, "utf8");
     const matches = [...contents.matchAll(/https:\/\/miro\.com\/app\/board\/[^\s"'<>\u0000-\u001f]+/g)];
     const match = matches.at(-1);
     if (!match?.[0]) return undefined;
-    return { index: match.index ?? 0, modifiedAt: candidate.modifiedAt, url: normaliseMiroBoardUrl(match[0]) };
+    return normaliseMiroBoardUrl(match[0]);
   } catch {
     return undefined;
   }
@@ -437,10 +373,6 @@ function miroBoardUrlFromText(text: string): string | undefined {
 
 function normaliseMiroBoardUrl(url: string): string {
   return url.replace(/[\u0000-\u001f]+/g, "").replace(/[),.;]+$/, "");
-}
-
-function isDefined<T>(value: T | undefined): value is T {
-  return value !== undefined;
 }
 
 interface ClientQueryConnection {
