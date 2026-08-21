@@ -69,6 +69,10 @@ interface UserSessionResponse {
   token: string;
 }
 
+interface MiroSettings {
+  SAVED_TAB_TITLES?: Record<string, unknown>;
+}
+
 interface ApiErrorResponse {
   error?: string;
 }
@@ -82,7 +86,7 @@ const recognisedChannels = new Set(["Hangout room 1", "Hangout room 2", "Hangout
 const studioKeychainService = "Studio McLeod TeamSpeak Bridge";
 const controlPort = 37631;
 const clientQueryTimeoutMs = 2_500;
-const miroDetectionTimeoutMs = 750;
+const miroDetectionTimeoutMs = 1_500;
 const miroOpenDelayMs = 3_000;
 const rememberedMiroBoardMs = 8 * 60 * 60 * 1000;
 const bridgeHeartbeatMs = 10_000;
@@ -112,7 +116,7 @@ async function main() {
         process.stdout.write(`TeamSpeak bridge watching ${clientQuerySettings.host}:${clientQuerySettings.port}\n`);
       }
       const channel = await currentTeamSpeakChannel(clientQuerySettings);
-      const activeBoardUrl = await activeMiroBoardUrl();
+      const activeBoardUrl = recognisedChannels.has(channel.name) ? await activeMiroBoardUrl() : undefined;
       if (activeBoardUrl) {
         lastDetectedMiroBoardAt = Date.now();
         lastDetectedMiroBoardUrl = activeBoardUrl;
@@ -301,13 +305,16 @@ async function currentTeamSpeakChannel(config: ClientQueryConfig): Promise<TeamS
 async function activeMiroBoardUrl(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
   const applicationName = await frontmostApplicationName();
-  if (!applicationName) return undefined;
   if (applicationName === "Miro") return activeMiroDesktopBoardUrl();
-  if (applicationName === "Safari") return activeSafariMiroBoardUrl();
-  if (["Google Chrome", "Brave Browser", "Microsoft Edge", "Arc"].includes(applicationName)) {
-    return activeChromiumMiroBoardUrl(applicationName);
+  if (applicationName === "Safari") {
+    const browserBoardUrl = await activeSafariMiroBoardUrl();
+    if (browserBoardUrl) return browserBoardUrl;
   }
-  return undefined;
+  if (["Google Chrome", "Brave Browser", "Microsoft Edge", "Arc"].includes(applicationName)) {
+    const browserBoardUrl = await activeChromiumMiroBoardUrl(applicationName);
+    if (browserBoardUrl) return browserBoardUrl;
+  }
+  return activeMiroDesktopBoardUrl();
 }
 
 async function frontmostApplicationName(): Promise<string | undefined> {
@@ -353,6 +360,46 @@ async function osascriptMiroBoardUrl(script: string[]): Promise<string | undefin
 }
 
 async function activeMiroDesktopBoardUrl(): Promise<string | undefined> {
+  const boardUrlFromTitle = await activeMiroDesktopBoardUrlFromTitle();
+  if (boardUrlFromTitle) return boardUrlFromTitle;
+  return activeMiroDesktopBoardUrlFromSentry();
+}
+
+async function activeMiroDesktopBoardUrlFromTitle(): Promise<string | undefined> {
+  const title = await activeMiroDesktopBoardTitle();
+  if (!title) return undefined;
+  return miroBoardUrlForSavedTitle(title);
+}
+
+async function activeMiroDesktopBoardTitle(): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      "osascript",
+      ["-e", "tell application \"System Events\" to tell process \"Miro\" to get entire contents of window 1"],
+      { timeout: miroDetectionTimeoutMs },
+    );
+    const matches = [...stdout.matchAll(/UI element (.+? - Miro) of group 1 of group 1 of group 1 of group \d+ of UI element Miro/g)];
+    return matches.map((match) => match[1]?.trim()).find((title) => title && !title.includes(" of "));
+  } catch {
+    return undefined;
+  }
+}
+
+async function miroBoardUrlForSavedTitle(title: string): Promise<string | undefined> {
+  const filePath = path.join(os.homedir(), "Library/Application Support/RealtimeBoard/settings.json");
+  try {
+    const settings = JSON.parse(await fs.readFile(filePath, "utf8")) as MiroSettings;
+    const savedTitles = settings.SAVED_TAB_TITLES ?? {};
+    const entry = Object.entries(savedTitles).find(([, savedTitle]) => savedTitle === title);
+    const boardId = entry?.[0];
+    if (!boardId || !/^[A-Za-z0-9_-]+=*$/.test(boardId)) return undefined;
+    return `https://miro.com/app/board/${boardId}/`;
+  } catch {
+    return undefined;
+  }
+}
+
+async function activeMiroDesktopBoardUrlFromSentry(): Promise<string | undefined> {
   const filePath = path.join(os.homedir(), "Library/Application Support/RealtimeBoard/sentry/scope_v3.json");
   try {
     const contents = await fs.readFile(filePath, "utf8");

@@ -79,7 +79,7 @@ describe("shouldShareTeamSpeakMiroBoard", () => {
     expect(shouldShareTeamSpeakMiroBoard(null, room, "user-1")).toBe(true);
   });
 
-  it("does not let a later participant overwrite the first participant board", () => {
+  it("allows the first bridge with a board to claim an empty room", () => {
     const roomBeforeJoin = meetingRoomRecord({
       participants: [
         {
@@ -107,7 +107,7 @@ describe("shouldShareTeamSpeakMiroBoard", () => {
       ],
     });
 
-    expect(shouldShareTeamSpeakMiroBoard(roomBeforeJoin, roomAfterJoin, "user-2")).toBe(false);
+    expect(shouldShareTeamSpeakMiroBoard(roomBeforeJoin, roomAfterJoin, "user-2")).toBe(true);
   });
 
   it("does not replace an existing room board", () => {
@@ -130,6 +130,21 @@ describe("shouldShareTeamSpeakMiroBoard", () => {
     });
 
     expect(shouldShareTeamSpeakMiroBoard(null, room, "user-1")).toBe(false);
+  });
+
+  it("does not share from a user outside the room", () => {
+    const room = meetingRoomRecord({
+      participants: [
+        {
+          userId: "user-1",
+          email: "duncan@studiomcleod.com",
+          name: "Duncan Mcleod",
+          joinedAt: "2026-07-02T18:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(shouldShareTeamSpeakMiroBoard(null, room, "user-2")).toBe(false);
   });
 });
 

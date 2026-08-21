@@ -808,8 +808,7 @@ function serializeJobWithUser(job: JobRecord, user: UserRecord | null): Conversi
 
 export function shouldShareTeamSpeakMiroBoard(roomBeforeJoin: MeetingRoomRecord | null, roomAfterJoin: MeetingRoomRecord, userId: string): boolean {
   if (roomAfterJoin.miroBoard) return false;
-  const firstParticipant = [...roomAfterJoin.participants].sort((left, right) => left.joinedAt.localeCompare(right.joinedAt))[0];
-  if (firstParticipant?.userId !== userId) return false;
+  if (!roomAfterJoin.participants.some((participant) => participant.userId === userId)) return false;
   return roomBeforeJoin?.miroBoard === undefined;
 }
 
