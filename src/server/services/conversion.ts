@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import type { Express } from "express";
-import type { ConversionSettings, StoredObject } from "../../shared/types.js";
+import type { ConversionSettings, Orientation, StoredObject } from "../../shared/types.js";
 import { getTargetPixelWidth } from "../../shared/scaling.js";
 import { config } from "../config.js";
 import { HttpError } from "../errors.js";
@@ -20,6 +20,7 @@ const execFileAsync = promisify(execFile);
 const MIRO_TILE_MAX_WIDTH = 5600;
 const MIRO_TILE_MAX_HEIGHT = 3900;
 const MIRO_TILE_MAX_AREA = 15_900_000;
+const PDF_RENDER_MAX_DIMENSION = 8000;
 sharp.cache(false);
 sharp.concurrency(1);
 
@@ -140,6 +141,7 @@ export class ConversionService {
         renderDir,
         resizedDir,
         targetPixelWidth,
+        orientation: input.settings.orientation,
       });
 
       const zipPath = path.join(jobDir, "miro_converted_jpegs.zip");
@@ -241,13 +243,14 @@ export class ConversionService {
     renderDir: string;
     resizedDir: string;
     targetPixelWidth: number;
+    orientation: Orientation;
   }): Promise<StoredObject[]> {
     const images: StoredObject[] = [];
 
     for (const file of input.files) {
       const baseName = safeStem(file.originalname);
       const prefix = path.join(input.renderDir, `${input.jobId}-${baseName}`);
-      await execFileAsync("pdftoppm", ["-jpeg", "-r", "300", file.path, prefix], {
+      await execFileAsync("pdftoppm", ["-jpeg", "-scale-to", String(pdfRenderMaxDimension(input.targetPixelWidth, input.orientation)), file.path, prefix], {
         maxBuffer: 1024 * 1024 * 20,
       });
 
@@ -311,6 +314,11 @@ export class ConversionService {
 
     return storedImages;
   }
+}
+
+export function pdfRenderMaxDimension(targetPixelWidth: number, orientation: Orientation): number {
+  const targetLongestEdge = orientation === "Landscape" ? targetPixelWidth : Math.round(targetPixelWidth * Math.SQRT2);
+  return Math.min(targetLongestEdge, PDF_RENDER_MAX_DIMENSION);
 }
 
 export function scaledDimensions(sourceDimensions: ImageDimensions, targetPixelWidth: number): ImageDimensions {

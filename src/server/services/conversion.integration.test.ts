@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Express } from "express";
 import { MemoryJobRepository } from "../repositories/jobs.js";
 import { LocalObjectStore } from "../storage/objectStore.js";
-import { ConversionService, conversionFailureMessage, scaledDimensions, tileRegions, tileSourceRegion } from "./conversion.js";
+import { ConversionService, conversionFailureMessage, pdfRenderMaxDimension, scaledDimensions, tileRegions, tileSourceRegion } from "./conversion.js";
 
 function hasPoppler(): boolean {
   try {
@@ -130,6 +130,18 @@ describe("conversionFailureMessage", () => {
 
   it("keeps non-memory conversion failures intact", () => {
     expect(conversionFailureMessage(new Error("No pages were rendered from the uploaded PDF."), 20900)).toBe("No pages were rendered from the uploaded PDF.");
+  });
+});
+
+describe("PDF render sizing", () => {
+  it("renders ordinary pages at the requested final dimensions", () => {
+    expect(pdfRenderMaxDimension(4200, "Landscape")).toBe(4200);
+    expect(pdfRenderMaxDimension(2968, "Portrait")).toBe(4197);
+  });
+
+  it("caps oversized source renders to protect production memory", () => {
+    expect(pdfRenderMaxDimension(8410, "Landscape")).toBe(8000);
+    expect(pdfRenderMaxDimension(21000, "Portrait")).toBe(8000);
   });
 });
 
