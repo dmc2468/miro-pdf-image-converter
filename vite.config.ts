@@ -28,6 +28,12 @@ export default defineConfig({
   build: {
     outDir: "../../dist/client",
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve("src/client/index.html"),
+        stringing: path.resolve("src/client/stringing/index.html"),
+      },
+    },
   },
   server: {
     port: 5173,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronDown,
+  CircleDollarSign,
   Copy,
   Briefcase,
   Download,
@@ -42,7 +43,7 @@ const MEETING_ROOMS_REFRESH_INTERVAL_MS = 1000;
 const MIRO_AUTO_SHARE_INTERVAL_MS = 1000;
 const TEAM_SPEAK_BRIDGE_CONTROL_URL = "http://127.0.0.1:37631";
 
-type Module = "miro-converter" | "property-search-new" | "property-search-saved" | "property-search-projects" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
+type Module = "miro-converter" | "stringing" | "property-search-new" | "property-search-saved" | "property-search-projects" | "meeting-rooms" | "voice-commands" | "admin-users" | "release-notes" | "sessions";
 
 interface TileGridSummary {
   rows: number;
@@ -52,6 +53,7 @@ interface TileGridSummary {
 type AlertVariant = "error" | "info";
 
 function currentModule(): Module {
+  if (window.location.pathname.startsWith("/stringing")) return "stringing";
   if (window.location.pathname.startsWith("/miro-board-share-tool")) return "meeting-rooms";
   if (window.location.pathname.startsWith("/property-search/saved")) return "property-search-saved";
   if (window.location.pathname.startsWith("/property-search/projects")) return "property-search-projects";
@@ -94,8 +96,13 @@ export function App() {
   }, []);
 
   function navigateTo(module: Module) {
+    if (module === "stringing") {
+      window.location.assign("/stringing");
+      return;
+    }
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
+      "stringing": "/stringing",
       "property-search-new": "/property-search/new",
       "property-search-saved": "/property-search/saved",
       "property-search-projects": "/property-search/projects",
@@ -220,6 +227,7 @@ type ModuleItem = {
 
 const modules: ModuleItem[] = [
   { id: "miro-converter", label: "Miro converter", icon: Image },
+  { id: "stringing", label: "Stringing tracker", icon: CircleDollarSign },
   { id: "meeting-rooms", label: "Meeting rooms", icon: Video },
   { id: "voice-commands", label: "Vectorworks voice commands", icon: Mic },
 ];
@@ -339,6 +347,7 @@ function SidebarChildNavButton({
 
 const moduleTitles: Record<Module, string> = {
   "miro-converter": "Miro converter",
+  "stringing": "Stringing tracker",
   "property-search-new": "Property Search",
   "property-search-saved": "Saved Searches",
   "property-search-projects": "Active Projects",

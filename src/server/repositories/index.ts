@@ -7,6 +7,7 @@ import { MemoryTeamSpeakBridgeRepository, MongoTeamSpeakBridgeRepository, type T
 import { MemoryUserRepository, MongoUserRepository, type UserRepository } from "./users.js";
 import { MemoryVoiceCommandRepository, MongoVoiceCommandRepository, type VoiceCommandRepository } from "./voice-commands.js";
 import { MemoryPropertySearchRepository, MongoPropertySearchRepository, type PropertySearchRepository } from "./property-searches.js";
+import { MemoryStringingStateRepository, MongoStringingStateRepository, type StringingStateRepository } from "./stringing-states.js";
 
 export type Repositories = {
   users: UserRepository;
@@ -15,6 +16,7 @@ export type Repositories = {
   teamSpeakBridges: TeamSpeakBridgeRepository;
   voiceCommands: VoiceCommandRepository;
   propertySearches: PropertySearchRepository;
+  stringingStates: StringingStateRepository;
   close: () => Promise<void>;
 };
 
@@ -25,6 +27,7 @@ export async function createRepositories(): Promise<Repositories> {
   let teamSpeakBridges: TeamSpeakBridgeRepository;
   let voiceCommands: VoiceCommandRepository;
   let propertySearches: PropertySearchRepository;
+  let stringingStates: StringingStateRepository;
   let close: () => Promise<void> = async () => undefined;
 
   if (config.mongoDbUri) {
@@ -37,6 +40,7 @@ export async function createRepositories(): Promise<Repositories> {
     teamSpeakBridges = new MongoTeamSpeakBridgeRepository(db);
     voiceCommands = new MongoVoiceCommandRepository(db);
     propertySearches = new MongoPropertySearchRepository(db);
+    stringingStates = new MongoStringingStateRepository(db);
     close = async () => client.close();
   } else {
     users = new MemoryUserRepository();
@@ -45,6 +49,7 @@ export async function createRepositories(): Promise<Repositories> {
     teamSpeakBridges = new MemoryTeamSpeakBridgeRepository();
     voiceCommands = new MemoryVoiceCommandRepository();
     propertySearches = new MemoryPropertySearchRepository();
+    stringingStates = new MemoryStringingStateRepository();
   }
 
   await users.ensureIndexes();
@@ -53,6 +58,7 @@ export async function createRepositories(): Promise<Repositories> {
   await teamSpeakBridges.ensureIndexes();
   await voiceCommands.ensureIndexes();
   await propertySearches.ensureIndexes();
+  await stringingStates.ensureIndexes();
   await meetingRooms.seedDefaults();
   await voiceCommands.seedDefaults();
 
@@ -78,5 +84,5 @@ export async function createRepositories(): Promise<Repositories> {
     }
   }
 
-  return { users, jobs, meetingRooms, teamSpeakBridges, voiceCommands, propertySearches, close };
+  return { users, jobs, meetingRooms, teamSpeakBridges, voiceCommands, propertySearches, stringingStates, close };
 }

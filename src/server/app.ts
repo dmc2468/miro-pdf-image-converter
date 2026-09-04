@@ -25,6 +25,7 @@ import { serializeTeamSpeakBridgeStatus } from "./repositories/teamspeak-bridges
 import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
 import { createPropertyConstraintsReport } from "./services/property-constraints.js";
 import { serializePropertySearch } from "./repositories/property-searches.js";
+import { isStringingState } from "../shared/stringing.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -757,6 +758,29 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
+  app.get("/api/stringing/state", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      const record = await repositories.stringingStates.findForUser(user.id);
+      response.json({ state: record?.state ?? null, updatedAt: record?.updatedAt.toISOString() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/stringing/state", requireAuth, async (request, response, next) => {
+    try {
+      const user = (request as AuthenticatedRequest).user;
+      if (!isStringingState(request.body)) {
+        throw new HttpError(400, "Invalid stringing tracker data.");
+      }
+      const record = await repositories.stringingStates.saveForUser(user.id, request.body);
+      response.json({ ok: true, updatedAt: record.updatedAt.toISOString() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/release-notes", async (_request, response, next) => {
     try {
       const info = await loadBuildInfo();
@@ -782,6 +806,9 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
   });
 
   const clientDir = path.resolve("dist/client");
+  app.get("/stringing", (_request, response) => {
+    response.sendFile(path.join(clientDir, "stringing", "index.html"));
+  });
   app.use(express.static(clientDir));
   app.get("*", (_request, response) => {
     response.sendFile(path.join(clientDir, "index.html"));
