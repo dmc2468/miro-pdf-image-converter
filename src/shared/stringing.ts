@@ -45,6 +45,7 @@ export interface StringingExpense {
   category: string;
   description: string;
   amount: number;
+  notes?: string;
   receipt?: { name: string; key: string; contentType: string };
 }
 export interface StringingString {
@@ -61,6 +62,11 @@ export interface StringingString {
   priceToCustomer?: number;
   customerPriceOverride?: number | null;
   priceSource?: string;
+  colour?: string;
+  hardness?: string;
+  characteristics?: string[];
+  reelPriceUrl?: string;
+  inStock?: boolean;
 }
 
 export interface StringingState {

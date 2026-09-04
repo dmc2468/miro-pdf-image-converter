@@ -10,6 +10,7 @@ import {
 import { AdminReports } from "./AdminReports";
 import { Analytics } from "./Analytics";
 import { NewOrderDialog } from "./NewOrderDialog";
+import { SummaryDashboard } from "./SummaryDashboard";
 import {
   Expenses,
   StringCosts,
@@ -18,7 +19,7 @@ import {
 } from "./Expenses";
 type Row = {
   id: string;
-  source: string;
+  source: "private" | "prostring";
   row: number;
   name: string;
   date?: string | null;
@@ -41,7 +42,7 @@ type Row = {
   notes?: string | null;
 };
 type View =
-  | "payments"
+  | "summary"
   | "prostring"
   | "private"
   | "balances"
@@ -75,7 +76,7 @@ const startingExpenses: Expense[] = [
   description: "Imported from Break Even",
   amount: Number(x[2]),
 }));
-const startingStrings: StringPrice[] = [
+const baseStrings: StringPrice[] = [
   ["Toroline", "O-Toro", "1.23", "Poly", 9.18,12,78,0,"100m",12],
   ["Toroline", "Toro-Toro", "1.23", "Poly", 6.82,12,58,0,"100m",12],
   ["Toroline", "Wasabi", "1.23", "Poly", 6.82,12,58,0,"100m",12],
@@ -94,6 +95,18 @@ const startingStrings: StringPrice[] = [
   setCost: Number(x[5]),reel100Cost:Number(x[6]),reel200Cost:Number(x[7]),purchaseFormat:String(x[8]) as "set"|"100m"|"200m",priceToCustomer:Number(x[9]),
   priceSource:String(x[0]).includes("Toroline")?"ph-tennis":String(x[0]).includes("Pro String")?"manual":"all-things-tennis",
 }));
+const yonexStrings: StringPrice[] = [
+  { id:"yonex-poly-tour-pro-125-blue", brand:"Yonex", name:"Poly Tour Pro", gauge:"1.25", type:"Poly", colour:"Blue", hardness:"1 Soft", characteristics:["Comfort","Power","Spin","Control"], costPerRacket:89.99/17, reel200Cost:89.99, purchaseFormat:"200m", priceToCustomer:9.5, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-pro-1-25-200m-reel-assorted-colours" },
+  { id:"yonex-poly-tour-pro-125-yellow", brand:"Yonex", name:"Poly Tour Pro", gauge:"1.25", type:"Poly", colour:"Yellow", hardness:"1 Soft", characteristics:["Comfort","Power","Spin","Control"], costPerRacket:89.99/17, reel200Cost:89.99, purchaseFormat:"200m", priceToCustomer:9.5, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-pro-1-25-200m-reel-assorted-colours" },
+  { id:"yonex-poly-tour-pro-120-yellow", brand:"Yonex", name:"Poly Tour Pro", gauge:"1.20", type:"Poly", colour:"Yellow", hardness:"1 Soft", characteristics:["Comfort","Power","Spin","Control"], costPerRacket:89.99/17, reel200Cost:89.99, purchaseFormat:"200m", priceToCustomer:9.5, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-pro-1-25-200m-reel-assorted-colours" },
+  { id:"yonex-poly-tour-fire-125-red", brand:"Yonex", name:"Poly Tour Fire (round, silicon infused)", gauge:"1.25", type:"Poly", colour:"Red", hardness:"2 Soft", characteristics:["Spin","Control","Durability"], costPerRacket:99.99/17, reel200Cost:99.99, purchaseFormat:"200m", priceToCustomer:12.99, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-fire-200m-reel" },
+  { id:"yonex-poly-tour-spin-125-blue", brand:"Yonex", name:"Poly Tour Spin (pentagonal)", gauge:"1.25", type:"Poly", colour:"Blue", hardness:"3 Medium", characteristics:["Spin"], costPerRacket:79.99/17, reel200Cost:79.99, purchaseFormat:"200m", priceToCustomer:12.99, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-spin-200m-reel-cobalt-blue" },
+  { id:"yonex-poly-tour-rev-125-orange", brand:"Yonex", name:"Poly Tour Rev (octagonal, silicon infused)", gauge:"1.25", type:"Poly", colour:"Orange", hardness:"4 Firm", characteristics:["Spin","Control","Durability"], costPerRacket:89.99/17, reel200Cost:89.99, purchaseFormat:"200m", priceToCustomer:12.99, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-rev-1-25mm-200m-reel" },
+  { id:"yonex-poly-tour-strike-125-grey", brand:"Yonex", name:"Poly Tour Strike (round)", gauge:"1.25", type:"Poly", colour:"Grey", hardness:"5 Firm", characteristics:["Power","Spin","Control","Durability"], costPerRacket:99.99/17, reel200Cost:99.99, purchaseFormat:"200m", priceToCustomer:12.99, priceSource:"all-things-tennis", reelPriceUrl:"https://allthingstennis.co.uk/products/yonex-poly-tour-strike-200m-reel-iron-grey" },
+  { id:"yonex-rexis-comfort-130-white", brand:"Yonex", name:"Rexis Comfort", gauge:"1.30", type:"Multifilament", colour:"White", characteristics:["Comfort"], costPerRacket:0, reel200Cost:0, purchaseFormat:"200m", priceToCustomer:0, priceSource:"all-things-tennis" },
+  { id:"yonex-rexis-speed-125-white-clear", brand:"Yonex", name:"Rexis Speed", gauge:"1.25", type:"Multifilament", colour:"White / Clear", characteristics:["Comfort","Power","Responsive"], costPerRacket:0, reel200Cost:0, purchaseFormat:"200m", priceToCustomer:0, priceSource:"all-things-tennis" },
+];
+const startingStrings: StringPrice[] = [...baseStrings, ...yonexStrings].map(item=>({...item,inStock:true}));
 export function StringingTracker({
   token,
   email,
@@ -108,7 +121,7 @@ export function StringingTracker({
       importedAdjustments as Adjustment[],
     ),
     [sundries, setSundries] = useState<Sundry[]>([]),
-    [view, setView] = useState<View>("payments"),
+    [view, setView] = useState<View>("summary"),
     [query, setQuery] = useState(""),
     [undo, setUndo] = useState<Row[] | null>(null),
     [draft, setDraft] = useState<Row | null>(null),
@@ -141,7 +154,9 @@ export function StringingTracker({
           setAdjustments(state.adjustments);
           setSundries(state.sundries ?? []);
           setExpenses(state.expenses ?? startingExpenses);
-          setStrings((state.strings ?? startingStrings).map((item:StringPrice)=>{const merged={...startingStrings.find(seed=>seed.id===item.id),...item};return merged.id==="string-4"&&merged.priceToCustomer===6?{...merged,priceToCustomer:16,priceSource:"manual"}:merged}));
+          const storedStrings=state.strings??[];
+          const mergedStrings=[...startingStrings.map(seed=>({...seed,...storedStrings.find((item:StringPrice)=>item.id===seed.id)})),...storedStrings.filter((item:StringPrice)=>!startingStrings.some(seed=>seed.id===item.id))];
+          setStrings(mergedStrings.map((item:StringPrice)=>item.id==="string-4"&&item.priceToCustomer===6?{...item,priceToCustomer:16,priceSource:"manual"}:item));
           storageReady.current = true;
           setSaveStatus("saved");
           return;
@@ -204,7 +219,7 @@ export function StringingTracker({
       rows
         .filter(
           (r) =>
-            (view === "records" || view === "payments" || r.source === view) &&
+            (view === "records" || r.source === view) &&
             (!query ||
               JSON.stringify(r).toLowerCase().includes(query.toLowerCase())),
         )
@@ -243,6 +258,9 @@ export function StringingTracker({
   const privateOutstanding = priv
     .filter((r) => String(r.payment).toLowerCase() === "unpaid")
     .reduce((s, r) => s + n(r.customerPrice), 0);
+  const privateIncome=priv.reduce((sum,row)=>sum+n(row.customerPrice),0),
+    privateProfit=priv.reduce((sum,row)=>sum+n(row.customerPrice)-n(row.stringCost),0),
+    proIncome=pro.reduce((sum,row)=>sum+n(row.customerPrice),0);
   function setPayment(row: Row, value: string) {
     if (value === "Paid") {
       setDraft({
@@ -297,7 +315,7 @@ export function StringingTracker({
           <p className="nav-heading">STRINGING</p>
           {(
             [
-              ["payments", "Payments"],
+              ["summary", "Summary"],
               ["prostring", "ProString jobs"],
               ["private", "Private clients"],
               ["balances", "Private balances"],
@@ -358,7 +376,7 @@ export function StringingTracker({
             <h1>
               {
                 {
-                  payments: "Payments",
+                  summary: "Summary",
                   prostring: "ProString jobs",
                   private: "Private clients",
                   balances: "Private balances",
@@ -371,7 +389,9 @@ export function StringingTracker({
               }
             </h1>
             <p>
-              {view === "analytics"
+              {view === "summary"
+                ? "Your stringing business at a glance."
+                : view === "analytics"
                 ? "Compare monthly ProString and private-client performance."
                 : view === "admin"
                   ? "Create, download and print private-client reports."
@@ -387,7 +407,7 @@ export function StringingTracker({
             </p>
           </div>
           <div className="head-actions">
-            {undo && !["admin","analytics","expenses","strings"].includes(view) ? (
+            {undo && !["summary","admin","analytics","expenses","strings"].includes(view) ? (
               <button
                 className="secondary"
                 onClick={() => {
@@ -398,7 +418,7 @@ export function StringingTracker({
                 ↶ Undo
               </button>
             ) : null}
-            {!["admin","analytics","expenses","strings"].includes(view) ? (
+            {!["summary","admin","analytics","expenses","strings"].includes(view) ? (
               <NewOrderDialog
                 rows={rows}
                 strings={strings}
@@ -412,7 +432,7 @@ export function StringingTracker({
             ) : null}
           </div>
         </div>
-        {!["admin","analytics","expenses","strings"].includes(view) ? (
+        {!["summary","admin","analytics","expenses","strings"].includes(view) ? (
           <div className="summary-grid">
             <article className="summary-card">
               <span>Due to you from ProString</span>
@@ -440,6 +460,7 @@ export function StringingTracker({
             </article>
           </div>
         ) : null}
+        {view === "summary" ? <SummaryDashboard rows={rows} adjustments={adjustments} expenses={expenses} /> : null}
         {view === "analytics" ? <Analytics rows={rows} /> : null}
         {view === "expenses" ? <Expenses items={expenses} onChange={setExpenses} token={token} grossProfit={4558+rows.filter(r=>r.id.startsWith("new-")).reduce((s,r)=>s+(r.source==="prostring"?n(r.dueToMe):n(r.customerPrice)-n(r.stringCost)),0)} /> : null}
         {view === "strings" ? <StringCosts items={strings} onChange={setStrings} /> : null}
@@ -452,8 +473,8 @@ export function StringingTracker({
             }}
           />
         ) : view === "admin" ? (
-          <AdminReports rows={rows} />
-        ) : view === "expenses" || view === "strings" || view === "analytics" ? (
+          <AdminReports rows={rows} adjustments={adjustments} />
+        ) : view === "summary" || view === "expenses" || view === "strings" || view === "analytics" ? (
           null
         ) : (
           <>
@@ -502,7 +523,7 @@ export function StringingTracker({
               <table>
                 <thead>
                   <tr>
-                    {view === "records" || view === "payments" ? (
+                    {view === "records" ? (
                       <th>Source</th>
                     ) : null}
                     <th>Job #</th>
@@ -525,7 +546,7 @@ export function StringingTracker({
                 <tbody>
                   {shown.map((r) => (
                     <tr key={r.id}>
-                      {view === "records" || view === "payments" ? (
+                      {view === "records" ? (
                         <td>
                           <span className={"source " + r.source}>
                             {r.source === "prostring" ? "ProString" : "Private"}
@@ -610,6 +631,11 @@ export function StringingTracker({
                     </tr>
                   ))}
                 </tbody>
+                {view === "private" ? (
+                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{priv.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`private-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(privateIncome)}</strong></td><td></td><td className="total-value"><span>Total profit</span><strong>{gbp(privateProfit)}</strong></td>{Array.from({length:4},(_,index)=><td key={`private-total-after-${index}`}></td>)}</tr></tfoot>
+                ) : view === "prostring" ? (
+                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{pro.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`pro-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(proIncome)}</strong></td><td></td><td className="due-total"><div><span>Before adjustments</span><strong>{gbp(jobBalance)}</strong></div><div><span>After adjustments</span><strong>{gbp(dueToMe)}</strong></div></td><td></td><td></td></tr></tfoot>
+                ) : null}
               </table>
             </div>
             {view === "prostring" ? (

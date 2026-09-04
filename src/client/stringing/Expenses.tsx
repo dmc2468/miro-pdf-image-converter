@@ -6,6 +6,7 @@ export type Expense = {
   category: string;
   description: string;
   amount: number;
+  notes?: string;
   receipt?: { name: string; key: string; contentType: string };
 };
 export type StringPrice = {
@@ -22,6 +23,11 @@ export type StringPrice = {
   priceToCustomer?: number;
   customerPriceOverride?: number | null;
   priceSource?: string;
+  colour?: string;
+  hardness?: string;
+  characteristics?: string[];
+  reelPriceUrl?: string;
+  inStock?: boolean;
 };
 const gbp = (v: number) =>
   new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(
@@ -46,6 +52,7 @@ export function Expenses({
     category: "String stock",
     description: "",
     amount: 0,
+    notes: "",
   });
   const [draft, setDraft] = useState<Expense | null>(null);
   const total = items.filter(x=>x.category!=="Sale").reduce((s, x) => s + x.amount, 0);
@@ -91,8 +98,6 @@ export function Expenses({
           <strong>{gbp(grossProfit + sales - total)}</strong>
         </article>
       </div>
-      <div className="finance-head"><div><h2>Items sold</h2><p>Money recovered from equipment and other stringing assets.</p></div></div>
-      <div className="finance-list sold-list">{items.filter(x=>x.category==="Sale").map(x=><div className="string-row" key={x.id}><span>{new Date(x.date).toLocaleDateString("en-GB")}</span><strong>{x.supplier}</strong><span>{x.description}</span><strong>{gbp(x.amount)}</strong><button className="edit-button" onClick={()=>setDraft({...x})}>Edit</button></div>)}</div>
       <div className="finance-head">
         <div>
           <h2>All expenses</h2>
@@ -109,6 +114,7 @@ export function Expenses({
           <span>Category</span>
           <span>Amount</span>
           <span>Receipt</span>
+          <span>Notes</span>
           <span></span>
         </div>
         {items.filter(x=>x.category!=="Sale").map((x) => (
@@ -138,11 +144,17 @@ export function Expenses({
                 </label>
               )}
             </span>
+            <span className="expense-notes">{x.notes || "—"}</span>
             <button className="edit-button" onClick={() => setDraft({ ...x })}>
               Edit
             </button>
           </div>
         ))}
+      </div>
+      <div className="finance-head sold-head"><div><h2>Items sold</h2><p>Money recovered from equipment and other stringing assets.</p></div></div>
+      <div className="finance-list sold-list">
+        <div className="finance-row finance-labels"><span>Date</span><span>Supplier / description</span><span>Category</span><span>Amount</span><span></span><span>Notes</span><span></span></div>
+        {items.filter(x=>x.category==="Sale").map(x=><div className="finance-row" key={x.id}><span>{new Date(x.date).toLocaleDateString("en-GB")}</span><span><strong>{x.supplier}</strong><small>{x.description}</small></span><span>{x.category}</span><span>{gbp(x.amount)}</span><span></span><span className="expense-notes">{x.notes || "—"}</span><button className="edit-button" onClick={()=>setDraft({...x})}>Edit</button></div>)}
       </div>
       {draft ? (
         <div className="modal-backdrop">
@@ -215,6 +227,10 @@ export function Expenses({
                   }
                 />
               </label>
+              <label className="wide">
+                Notes
+                <input value={draft.notes??""} onChange={e=>setDraft({...draft,notes:e.target.value})}/>
+              </label>
             </div>
             <div className="modal-actions">
               <button
@@ -252,24 +268,37 @@ export function StringCosts({
     purchaseFormat: "set" as const,
     priceToCustomer: 0,
     priceSource: "manual",
+    inStock: true,
   });
   const [d, setD] = useState<StringPrice | null>(null);
   const [showCostDetails,setShowCostDetails]=useState(false);
   const [query,setQuery]=useState(""),[brandFilter,setBrandFilter]=useState("all"),[typeFilter,setTypeFilter]=useState("all"),[formatFilter,setFormatFilter]=useState("all");
   const [sortBy,setSortBy]=useState<"name"|"customer"|"cost"|"markup">("name"),[sortDirection,setSortDirection]=useState<"asc"|"desc">("asc");
-  const effectivePrice=(item:StringPrice)=>item.customerPriceOverride??item.priceToCustomer??item.setCost??0;
+  const effectivePrice=(item:StringPrice)=>{if(item.customerPriceOverride!=null)return item.customerPriceOverride;const price=item.priceToCustomer??item.setCost??0;return item.priceSource==="manual"?price:Math.ceil(price)};
   const markup=(item:StringPrice)=>item.costPerRacket===0?"—":`${(((effectivePrice(item)-item.costPerRacket)/item.costPerRacket)*100).toFixed(1)}%`;
   const calculatedCost=(item:StringPrice)=>item.purchaseFormat==="100m"?(item.reel100Cost??0)/8:item.purchaseFormat==="200m"?(item.reel200Cost??0)/17:(item.setCost??0);
   const sources=d?retailerOptions(d.brand):[];
   const selectedSource=d?sources.find(source=>source.value===(d.priceSource??sources[0]?.value)):undefined;
   const brands=Array.from(new Set(items.map(x=>x.brand).filter(Boolean))).sort();
   const types=Array.from(new Set(items.map(x=>x.type).filter(Boolean))).sort();
-  const visible=items.filter(x=>(!query||`${x.brand} ${x.name} ${x.gauge}`.toLowerCase().includes(query.toLowerCase()))&&(brandFilter==="all"||x.brand===brandFilter)&&(typeFilter==="all"||x.type===typeFilter)&&(formatFilter==="all"||x.purchaseFormat===formatFilter)).sort((a,b)=>{const av=sortBy==="customer"?effectivePrice(a):sortBy==="cost"?a.costPerRacket:sortBy==="markup"?(a.costPerRacket?((effectivePrice(a)-a.costPerRacket)/a.costPerRacket)*100:Number.POSITIVE_INFINITY):`${a.brand} ${a.name}`;const bv=sortBy==="customer"?effectivePrice(b):sortBy==="cost"?b.costPerRacket:sortBy==="markup"?(b.costPerRacket?((effectivePrice(b)-b.costPerRacket)/b.costPerRacket)*100:Number.POSITIVE_INFINITY):`${b.brand} ${b.name}`;const result=typeof av==="number"&&typeof bv==="number"?av-bv:String(av).localeCompare(String(bv));return sortDirection==="asc"?result:-result});
+  const visible=items.filter(x=>(!query||`${x.brand} ${x.name} ${x.gauge} ${x.colour??""} ${(x.characteristics??[]).join(" ")}`.toLowerCase().includes(query.toLowerCase()))&&(brandFilter==="all"||x.brand===brandFilter)&&(typeFilter==="all"||x.type===typeFilter)&&(formatFilter==="all"||x.purchaseFormat===formatFilter)).sort((a,b)=>{const av=sortBy==="customer"?effectivePrice(a):sortBy==="cost"?a.costPerRacket:sortBy==="markup"?(a.costPerRacket?((effectivePrice(a)-a.costPerRacket)/a.costPerRacket)*100:Number.POSITIVE_INFINITY):`${a.brand} ${a.name}`;const bv=sortBy==="customer"?effectivePrice(b):sortBy==="cost"?b.costPerRacket:sortBy==="markup"?(b.costPerRacket?((effectivePrice(b)-b.costPerRacket)/b.costPerRacket)*100:Number.POSITIVE_INFINITY):`${b.brand} ${b.name}`;const result=typeof av==="number"&&typeof bv==="number"?av-bv:String(av).localeCompare(String(bv));return sortDirection==="asc"?result:-result});
+  const yonex=visible.filter(x=>x.brand.toLowerCase()==="yonex"),others=visible.filter(x=>x.brand.toLowerCase()!=="yonex");
+  const characteristicColumns=["Comfort","Power","Spin","Control","Durability","Responsive"];
+  const list=(sectionItems:StringPrice[],yonexSection=false)=><div className={yonexSection?"finance-list yonex-list":"finance-list"}>
+    <div className={showCostDetails?"string-row string-labels details":"string-row string-labels"}><span>Manufacturer</span><span>String</span><span>Type</span><span>Gauge</span><span>Customer price</span><span>Stock</span>{showCostDetails?<><span>Cost per racket</span><span>Markup</span></>:null}<span></span></div>
+    {sectionItems.map(x=><div className={`${showCostDetails?"string-row details":"string-row"}${x.inStock===false?" out-of-stock":""}`} key={x.id}>
+      <strong>{x.brand}</strong>
+      <span className="string-name"><strong>{x.name}</strong>{yonexSection?<span className="characteristic-grid" aria-label="Colour, hardness and string characteristics"><span className={x.colour?"active":""}>{x.colour??""}</span><span className={x.hardness?"active":""}>{x.hardness??""}</span>{characteristicColumns.map(label=><span key={label} className={(x.characteristics??[]).includes(label)?"active":""}>{(x.characteristics??[]).includes(label)?label:""}</span>)}</span>:null}</span>
+      <span>{x.type}</span><span>{x.gauge}</span><strong>{effectivePrice(x)>0?gbp(effectivePrice(x)):"—"}</strong><strong>{x.inStock===false?"No":"Yes"}</strong>
+      {showCostDetails?<><strong>{x.costPerRacket>0?gbp(x.costPerRacket):"—"}</strong><strong>{markup(x)}</strong></>:null}
+      <button className="edit-button" onClick={()=>setD({...x,inStock:x.inStock!==false})}>Edit</button>
+    </div>)}
+  </div>;
   return (
     <section className="finance-page">
       <div className="finance-head">
         <div>
-          <h2>String costs</h2>
+          <h2>String Prices</h2>
           <p>
             Cost per racket is used automatically to calculate order profit.
           </p>
@@ -280,23 +309,9 @@ export function StringCosts({
       </div>
       <div className="string-filters"><input className="search" placeholder="Search brand, string or gauge…" value={query} onChange={e=>setQuery(e.target.value)}/><label>Brand<select value={brandFilter} onChange={e=>setBrandFilter(e.target.value)}><option value="all">All brands</option>{brands.map(x=><option key={x}>{x}</option>)}</select></label><label>Type<select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}><option value="all">All types</option>{types.map(x=><option key={x}>{x}</option>)}</select></label><label>Purchased as<select value={formatFilter} onChange={e=>setFormatFilter(e.target.value)}><option value="all">All formats</option><option value="set">Set</option><option value="100m">100 m reel</option><option value="200m">200 m reel</option></select></label><label>Sort by<select value={sortBy} onChange={e=>setSortBy(e.target.value as typeof sortBy)}><option value="name">String name</option><option value="customer">Customer price</option><option value="cost">Cost per racket</option><option value="markup">Markup</option></select></label><button className="sort-arrow" title={sortDirection==="asc"?"Ascending":"Descending"} onClick={()=>setSortDirection(value=>value==="asc"?"desc":"asc")}>{sortDirection==="asc"?"↑":"↓"}</button></div>
       <div className="string-detail-toggle"><span>Show cost and markup</span><button type="button" role="switch" aria-checked={showCostDetails} className={showCostDetails?"toggle-switch on":"toggle-switch"} onClick={()=>setShowCostDetails(value=>!value)}><span /></button></div>
-      <div className="finance-list">
-        <div className={showCostDetails?"string-row string-labels details":"string-row string-labels"}><span>Manufacturer</span><span>String</span><span>Type</span><span>Gauge</span><span>Customer price</span>{showCostDetails?<><span>Cost per racket</span><span>Markup</span></>:null}<span></span></div>
-        {visible.map((x) => (
-          <div className={showCostDetails?"string-row details":"string-row"} key={x.id}>
-            <strong>{x.brand}</strong>
-            <strong>{x.name}</strong>
-            <span>{x.type}</span>
-            <span>{x.gauge}</span>
-            <strong>{gbp(x.customerPriceOverride ?? x.priceToCustomer ?? x.setCost ?? 0)}</strong>
-            {showCostDetails?<><strong>{gbp(x.costPerRacket)}</strong><strong>{markup(x)}</strong></>:null}
-            <button className="edit-button" onClick={() => setD({ ...x })}>
-              Edit
-            </button>
-          </div>
-        ))}
-        {!visible.length?<div className="empty-state">No strings match these filters.</div>:null}
-      </div>
+      {yonex.length?<div className="string-section"><div className="string-section-head"><div><h3>Yonex strings</h3><p>Range details from General rows 35–43. Reel prices checked at All Things Tennis.</p></div></div>{list(yonex,true)}</div>:null}
+      {others.length?<div className="string-section"><div className="string-section-head"><h3>Other strings</h3></div>{list(others)}</div>:null}
+      {!visible.length?<div className="empty-state finance-list">No strings match these filters.</div>:null}
       {d ? (
         <div className="modal-backdrop">
           <form
@@ -324,6 +339,8 @@ export function StringCosts({
                   />
                 </label>
               ))}
+              {d.brand.toLowerCase()==="yonex"?<><label>Colour<input value={d.colour??""} onChange={e=>setD({...d,colour:e.target.value})}/></label><label>Hardness<input value={d.hardness??""} onChange={e=>setD({...d,hardness:e.target.value})}/></label><label className="edit-wide">Characteristics<input value={(d.characteristics??[]).join(", ")} onChange={e=>setD({...d,characteristics:e.target.value.split(",").map(value=>value.trim()).filter(Boolean)})}/></label></>:null}
+              <label>In stock<select value={d.inStock?"yes":"no"} onChange={e=>setD({...d,inStock:e.target.value==="yes"})}><option value="yes">Yes</option><option value="no">No</option></select></label>
               <label>How I bought it<select value={d.purchaseFormat ?? "set"} onChange={e=>setD({...d,purchaseFormat:e.target.value as "set"|"100m"|"200m"})}><option value="set">Set (12 m)</option><option value="100m">100 m reel</option><option value="200m">200 m reel</option></select></label>
               {d.purchaseFormat==="100m"?<label>Price paid for 100 m reel<input autoFocus type="number" step=".01" value={d.reel100Cost ?? 0} onChange={e=>setD({...d,reel100Cost:Number(e.target.value)})}/></label>:d.purchaseFormat==="200m"?<label>Price paid for 200 m reel<input autoFocus type="number" step=".01" value={d.reel200Cost ?? 0} onChange={e=>setD({...d,reel200Cost:Number(e.target.value)})}/></label>:<label>Price paid for set<input autoFocus type="number" step=".01" value={d.setCost ?? 0} onChange={e=>setD({...d,setCost:Number(e.target.value)})}/></label>}
               <label>Customer price source<select value={d.priceSource??sources[0]?.value??"manual"} onChange={e=>setD({...d,priceSource:e.target.value})}>{sources.map(source=><option key={source.value} value={source.value}>{source.label}</option>)}</select></label>
