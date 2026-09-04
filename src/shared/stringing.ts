@@ -38,49 +38,83 @@ export interface StringingSundry {
   direction: "ray-owes" | "dm-owes";
   complete: boolean;
 }
+export interface StringingExpense {
+  id: string;
+  date: string;
+  supplier: string;
+  category: string;
+  description: string;
+  amount: number;
+  receipt?: { name: string; key: string; contentType: string };
+}
+export interface StringingString {
+  id: string;
+  brand: string;
+  name: string;
+  gauge: string;
+  type: string;
+  costPerRacket: number;
+  setCost?: number;
+  reel100Cost?: number;
+  reel200Cost?: number;
+  purchaseFormat?: "set" | "100m" | "200m";
+  priceToCustomer?: number;
+  customerPriceOverride?: number | null;
+  priceSource?: string;
+}
 
 export interface StringingState {
   rows: StringingRow[];
   adjustments: StringingAdjustment[];
   sundries: StringingSundry[];
+  expenses?: StringingExpense[];
+  strings?: StringingString[];
 }
 
 export function isStringingState(value: unknown): value is StringingState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StringingState>;
-  return Array.isArray(candidate.rows)
-    && candidate.rows.every(isStringingRow)
-    && Array.isArray(candidate.adjustments)
-    && candidate.adjustments.every(isStringingAdjustment)
-    && Array.isArray(candidate.sundries)
-    && candidate.sundries.every(isStringingSundry);
+  return (
+    Array.isArray(candidate.rows) &&
+    candidate.rows.every(isStringingRow) &&
+    Array.isArray(candidate.adjustments) &&
+    candidate.adjustments.every(isStringingAdjustment) &&
+    Array.isArray(candidate.sundries) &&
+    candidate.sundries.every(isStringingSundry)
+  );
 }
 
 function isStringingRow(value: unknown): value is StringingRow {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StringingRow>;
-  return typeof candidate.id === "string"
-    && (candidate.source === "private" || candidate.source === "prostring")
-    && typeof candidate.row === "number"
-    && typeof candidate.name === "string";
+  return (
+    typeof candidate.id === "string" &&
+    (candidate.source === "private" || candidate.source === "prostring") &&
+    typeof candidate.row === "number" &&
+    typeof candidate.name === "string"
+  );
 }
 
 function isStringingAdjustment(value: unknown): value is StringingAdjustment {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StringingAdjustment>;
-  return typeof candidate.id === "string"
-    && typeof candidate.date === "string"
-    && typeof candidate.description === "string"
-    && (candidate.type === "supplied" || candidate.type === "purchase")
-    && typeof candidate.amount === "number";
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.date === "string" &&
+    typeof candidate.description === "string" &&
+    (candidate.type === "supplied" || candidate.type === "purchase") &&
+    typeof candidate.amount === "number"
+  );
 }
 
 function isStringingSundry(value: unknown): value is StringingSundry {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StringingSundry>;
-  return typeof candidate.id === "string"
-    && typeof candidate.date === "string"
-    && typeof candidate.description === "string"
-    && (candidate.direction === "ray-owes" || candidate.direction === "dm-owes")
-    && typeof candidate.complete === "boolean";
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.date === "string" &&
+    typeof candidate.description === "string" &&
+    (candidate.direction === "ray-owes" || candidate.direction === "dm-owes") &&
+    typeof candidate.complete === "boolean"
+  );
 }

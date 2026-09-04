@@ -31,6 +31,7 @@ const execFileAsync = promisify(execFile);
 
 export function createApp(repositories: Repositories, objectStore: ObjectStore): express.Express {
   const app = express();
+  const receiptUpload = multer({dest:path.join(config.tempDir,"receipts"),limits:{fileSize:10*1024*1024,files:1},fileFilter:(_request,file,callback)=>{const allowed=file.mimetype==="application/pdf"||file.mimetype.startsWith("image/");if(!allowed){callback(new HttpError(400,"Please upload an image or PDF receipt."));return}callback(null,true)}});
   const upload = multer({
     dest: path.join(config.tempDir, "uploads"),
     limits: {
@@ -780,6 +781,10 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       next(error);
     }
   });
+
+  app.post("/api/stringing/expenses/:expenseId/receipt",requireAuth,receiptUpload.single("receipt"),async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,file=request.file;if(!file)throw new HttpError(400,"Please choose a receipt.");const safeName=file.originalname.replace(/[^a-zA-Z0-9._-]/g,"-");const key=`users/${user.id}/stringing/receipts/${request.params.expenseId}/${Date.now()}-${safeName}`;const stored=await objectStore.putFile({key,filePath:file.path,contentType:file.mimetype,originalFileName:file.originalname});response.status(201).json({receipt:{name:file.originalname,key:stored.key,contentType:file.mimetype}})}catch(error){next(error)}});
+
+  app.get("/api/stringing/expenses/:expenseId/receipt",requireAuth,async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,record=await repositories.stringingStates.findForUser(user.id),expense=record?.state.expenses?.find(item=>item.id===request.params.expenseId);if(!expense?.receipt)throw new HttpError(404,"Receipt not found.");response.type(expense.receipt.contentType);response.setHeader("Content-Disposition",`inline; filename="${expense.receipt.name.replace(/["\r\n]/g,"")}"`);(await objectStore.getReadStream(expense.receipt.key)).pipe(response)}catch(error){next(error)}});
 
   app.get("/api/release-notes", async (_request, response, next) => {
     try {
