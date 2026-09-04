@@ -332,8 +332,10 @@ export function StringCosts({
             <div className="edit-grid">
               {(["brand", "name", "gauge", "type"] as const).map((k) => (
                 <label key={k}>
-                  {k[0].toUpperCase() + k.slice(1)}
+                  {k === "gauge" ? "Gauge (mm)" : k[0].toUpperCase() + k.slice(1)}
                   <input
+                    required={k === "brand" || k === "name" || k === "gauge"}
+                    placeholder={k === "gauge" ? "e.g. 1.25" : undefined}
                     value={d[k]}
                     onChange={(e) => {const value=e.target.value;setD({ ...d, [k]: value,...(k==="brand"?{priceSource:retailerOptions(value)[0].value}:{}) })}}
                   />

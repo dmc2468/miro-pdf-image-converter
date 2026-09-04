@@ -31,6 +31,20 @@ function StringingApp() {
     setSession(null);
   }
 
+  if (session?.user.role !== "admin") {
+    return (
+      <main className="stringing-login">
+        <div className="stringing-login-access">
+          <div className="brand-mark">SM</div>
+          <p className="eyebrow">STUDIO MCLEOD</p>
+          <h1>Admin access required</h1>
+          <p>The Stringing Tracker is available only to Studio McLeod administrators.</p>
+          <button className="primary" type="button" onClick={() => window.location.assign("/")}>Back to Studio McLeod Tools</button>
+          <button type="button" onClick={logout}>Sign out</button>
+        </div>
+      </main>
+    );
+  }
   if (session) return <StringingTracker token={session.token} email={session.user.email} onLogout={logout} />;
   return <StringingLogin onSession={saveSession} />;
 }

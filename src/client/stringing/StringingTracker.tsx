@@ -283,6 +283,14 @@ export function StringingTracker({
       ),
     );
   }
+  function setJobStatus(row: Row, value: string) {
+    setUndo(rows);
+    setRows((currentRows) =>
+      currentRows.map((item) =>
+        item.id === row.id ? { ...item, status: value } : item,
+      ),
+    );
+  }
   function saveDraft() {
     if (!draft) return;
     const original = rows.find((r) => r.id === draft.id),
@@ -537,6 +545,7 @@ export function StringingTracker({
                     {view === "private" ? (
                       <><th>String cost</th><th>Profit</th></>
                     ) : null}
+                    {view !== "records" ? <th>Status</th> : null}
                     <th>Payment</th>
                     <th>{view === "prostring" ? "Due to DM" : "Balance"}</th>
                     <th>Notes</th>
@@ -577,6 +586,18 @@ export function StringingTracker({
                       <td>{gbp(n(r.customerPrice))}</td>
                       {view === "private" ? (
                         <><td>{gbp(n(r.stringCost))}</td><td><strong>{gbp(n(r.customerPrice) - n(r.stringCost))}</strong></td></>
+                      ) : null}
+                      {view !== "records" ? (
+                        <td>
+                          <select
+                            className={`job-status ${String(r.status).toLowerCase() === "complete" ? "complete" : "todo"}`}
+                            value={String(r.status).toLowerCase() === "complete" ? "Complete" : "To do"}
+                            onChange={(e) => setJobStatus(r, e.target.value)}
+                          >
+                            <option>To do</option>
+                            <option>Complete</option>
+                          </select>
+                        </td>
                       ) : null}
                       <td>
                         {r.source === "private" ? (
@@ -632,9 +653,9 @@ export function StringingTracker({
                   ))}
                 </tbody>
                 {view === "private" ? (
-                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{priv.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`private-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(privateIncome)}</strong></td><td></td><td className="total-value"><span>Total profit</span><strong>{gbp(privateProfit)}</strong></td>{Array.from({length:4},(_,index)=><td key={`private-total-after-${index}`}></td>)}</tr></tfoot>
+                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{priv.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`private-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(privateIncome)}</strong></td><td></td><td className="total-value"><span>Total profit</span><strong>{gbp(privateProfit)}</strong></td>{Array.from({length:5},(_,index)=><td key={`private-total-after-${index}`}></td>)}</tr></tfoot>
                 ) : view === "prostring" ? (
-                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{pro.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`pro-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(proIncome)}</strong></td><td></td><td className="due-total"><div><span>Before adjustments</span><strong>{gbp(jobBalance)}</strong></div><div><span>After adjustments</span><strong>{gbp(dueToMe)}</strong></div></td><td></td><td></td></tr></tfoot>
+                  <tfoot><tr className="records-total-row"><td><strong>Totals</strong><small>{pro.length} orders</small></td>{Array.from({length:6},(_,index)=><td key={`pro-total-before-${index}`}></td>)}<td className="total-value"><span>Total income</span><strong>{gbp(proIncome)}</strong></td><td></td><td></td><td className="due-total"><div><span>Before adjustments</span><strong>{gbp(jobBalance)}</strong></div><div><span>After adjustments</span><strong>{gbp(dueToMe)}</strong></div></td><td></td><td></td></tr></tfoot>
                 ) : null}
               </table>
             </div>
@@ -722,6 +743,18 @@ export function StringingTracker({
                   />
                 </label>
               ))}
+              <label>
+                Job status
+                <select
+                  value={String(draft.status).toLowerCase() === "complete" ? "Complete" : "To do"}
+                  onChange={(e) =>
+                    setDraft({ ...draft, status: e.target.value })
+                  }
+                >
+                  <option>To do</option>
+                  <option>Complete</option>
+                </select>
+              </label>
               <label>
                 Payment
                 <select

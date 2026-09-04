@@ -446,7 +446,7 @@ function Sidebar({
         <p className="px-2 text-xs font-semibold uppercase tracking-wider text-muted">Modules</p>
         <SidebarNavButton item={modules[0]} active={activeModule === modules[0].id} onNavigate={onNavigate} />
         <PropertySearchSidebarGroup activeModule={activeModule} onNavigate={onNavigate} />
-        {modules.slice(1).map((mod) => (
+        {modules.slice(1).filter((mod) => mod.id !== "stringing" || role === "admin").map((mod) => (
           <SidebarNavButton key={mod.id} item={mod} active={activeModule === mod.id} onNavigate={onNavigate} />
         ))}
 

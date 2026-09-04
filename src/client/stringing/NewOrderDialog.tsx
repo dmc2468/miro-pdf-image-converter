@@ -47,6 +47,7 @@ const empty = (
   dueToMe: 0,
   cashHeld: 0,
   received: 0,
+  status: "To do",
   payment: source === "private" ? "Unpaid" : "Paid to Ray",
   notes: "",
 });
@@ -57,7 +58,7 @@ export function NewOrderDialog({
   onAdd,
 }: {
   rows: OrderRow[];
-  strings: {id:string;brand:string;name:string;costPerRacket:number;priceToCustomer?:number;customerPriceOverride?:number|null}[];
+  strings: {id:string;brand:string;name:string;gauge:string;costPerRacket:number;priceToCustomer?:number;customerPriceOverride?:number|null}[];
   onAdd: (row: OrderRow) => void;
 }) {
   const [draft, setDraft] = useState<OrderRow | null>(null),
@@ -65,6 +66,15 @@ export function NewOrderDialog({
   const source = (draft?.source === "prostring" ? "prostring" : "private") as
     | "private"
     | "prostring";
+  const stringLabel = (item: (typeof strings)[number]) =>
+    `${item.brand} ${item.name}${item.gauge ? ` · ${item.gauge} mm` : ""}`;
+  const selectedStringValue = draft
+    ? strings.find(
+        (item) =>
+          stringLabel(item) === draft.main ||
+          `${item.brand} ${item.name}` === draft.main,
+      )
+    : undefined;
   const customers = useMemo(
     () =>
       Array.from(
@@ -231,7 +241,7 @@ export function NewOrderDialog({
               </label>
               <label>
                 Main string
-                <select value={draft.main || ""} onChange={(e) => {const selected=strings.find(x=>`${x.brand} ${x.name}`===e.target.value);setDraft({...draft,main:e.target.value,stringCost:selected?.costPerRacket??0,customerPrice:selected?.customerPriceOverride??selected?.priceToCustomer??draft.customerPrice})}}><option value="">Choose string</option>{strings.map(x=><option key={x.id}>{x.brand} {x.name}</option>)}</select>
+                <select value={selectedStringValue ? stringLabel(selectedStringValue) : draft.main || ""} onChange={(e) => {const selected=strings.find(x=>stringLabel(x)===e.target.value);setDraft({...draft,main:e.target.value,stringCost:selected?.costPerRacket??0,customerPrice:selected?.customerPriceOverride??selected?.priceToCustomer??draft.customerPrice})}}><option value="">Choose string and gauge</option>{draft.main&&!selectedStringValue?<option value={draft.main}>{draft.main} (existing)</option>:null}{strings.map(x=><option key={x.id} value={stringLabel(x)}>{stringLabel(x)}</option>)}</select>
               </label>
               <label>String cost<input readOnly type="number" value={n(draft.stringCost)} /></label>
               <label>
@@ -302,6 +312,18 @@ export function NewOrderDialog({
                   />
                 </label>
               )}
+              <label>
+                Job status
+                <select
+                  value={draft.status || "To do"}
+                  onChange={(e) =>
+                    setDraft({ ...draft, status: e.target.value })
+                  }
+                >
+                  <option>To do</option>
+                  <option>Complete</option>
+                </select>
+              </label>
               <label>
                 Payment
                 <select

@@ -759,7 +759,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
-  app.get("/api/stringing/state", requireAuth, async (request, response, next) => {
+  app.get("/api/stringing/state", requireAuth, requireAdmin, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;
       const record = await repositories.stringingStates.findForUser(user.id);
@@ -769,7 +769,7 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
-  app.put("/api/stringing/state", requireAuth, async (request, response, next) => {
+  app.put("/api/stringing/state", requireAuth, requireAdmin, async (request, response, next) => {
     try {
       const user = (request as AuthenticatedRequest).user;
       if (!isStringingState(request.body)) {
@@ -782,9 +782,9 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
     }
   });
 
-  app.post("/api/stringing/expenses/:expenseId/receipt",requireAuth,receiptUpload.single("receipt"),async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,file=request.file;if(!file)throw new HttpError(400,"Please choose a receipt.");const safeName=file.originalname.replace(/[^a-zA-Z0-9._-]/g,"-");const key=`users/${user.id}/stringing/receipts/${request.params.expenseId}/${Date.now()}-${safeName}`;const stored=await objectStore.putFile({key,filePath:file.path,contentType:file.mimetype,originalFileName:file.originalname});response.status(201).json({receipt:{name:file.originalname,key:stored.key,contentType:file.mimetype}})}catch(error){next(error)}});
+  app.post("/api/stringing/expenses/:expenseId/receipt",requireAuth,requireAdmin,receiptUpload.single("receipt"),async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,file=request.file;if(!file)throw new HttpError(400,"Please choose a receipt.");const safeName=file.originalname.replace(/[^a-zA-Z0-9._-]/g,"-");const key=`users/${user.id}/stringing/receipts/${request.params.expenseId}/${Date.now()}-${safeName}`;const stored=await objectStore.putFile({key,filePath:file.path,contentType:file.mimetype,originalFileName:file.originalname});response.status(201).json({receipt:{name:file.originalname,key:stored.key,contentType:file.mimetype}})}catch(error){next(error)}});
 
-  app.get("/api/stringing/expenses/:expenseId/receipt",requireAuth,async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,record=await repositories.stringingStates.findForUser(user.id),expense=record?.state.expenses?.find(item=>item.id===request.params.expenseId);if(!expense?.receipt)throw new HttpError(404,"Receipt not found.");response.type(expense.receipt.contentType);response.setHeader("Content-Disposition",`inline; filename="${expense.receipt.name.replace(/["\r\n]/g,"")}"`);(await objectStore.getReadStream(expense.receipt.key)).pipe(response)}catch(error){next(error)}});
+  app.get("/api/stringing/expenses/:expenseId/receipt",requireAuth,requireAdmin,async(request,response,next)=>{try{const user=(request as AuthenticatedRequest).user,record=await repositories.stringingStates.findForUser(user.id),expense=record?.state.expenses?.find(item=>item.id===request.params.expenseId);if(!expense?.receipt)throw new HttpError(404,"Receipt not found.");response.type(expense.receipt.contentType);response.setHeader("Content-Disposition",`inline; filename="${expense.receipt.name.replace(/["\r\n]/g,"")}"`);(await objectStore.getReadStream(expense.receipt.key)).pipe(response)}catch(error){next(error)}});
 
   app.get("/api/release-notes", async (_request, response, next) => {
     try {
