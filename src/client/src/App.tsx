@@ -97,12 +97,12 @@ export function App() {
 
   function navigateTo(module: Module) {
     if (module === "stringing") {
-      window.location.assign("/stringing");
+      window.location.assign("/stringing/");
       return;
     }
     const paths: Record<Module, string> = {
       "miro-converter": "/miro-converter",
-      "stringing": "/stringing",
+      "stringing": "/stringing/",
       "property-search-new": "/property-search/new",
       "property-search-saved": "/property-search/saved",
       "property-search-projects": "/property-search/projects",

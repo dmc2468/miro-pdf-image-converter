@@ -60,6 +60,8 @@ const gbp = (v: number) =>
 const date = (v?: string | null) =>
   v ? new Date(v).toLocaleDateString("en-GB") : "—";
 const jobNumber = (r: Row) => (r.source === "private" ? r.row - 2 : r.row - 1);
+const isCompleted = (r: Row) =>
+  ["complete", "completed"].includes(String(r.status).trim().toLowerCase());
 const orderBalance = (r: Row) =>
   r.source === "prostring" ? n(r.dueToMe) : n(r.customerPrice) - n(r.received);
 const startingExpenses: Expense[] = [
@@ -126,7 +128,8 @@ export function StringingTracker({
     [undo, setUndo] = useState<Row[] | null>(null),
     [draft, setDraft] = useState<Row | null>(null),
     [sortKey, setSortKey] = useState<SortKey>("row"),
-    [sortDir, setSortDir] = useState<"asc" | "desc">("asc"),
+    [sortDir, setSortDir] = useState<"asc" | "desc">("desc"),
+    [statusFilter, setStatusFilter] = useState<"all" | "todo" | "completed">("all"),
     [saveStatus, setSaveStatus] = useState<
       "loading" | "saving" | "saved" | "error"
     >("loading");
@@ -220,6 +223,8 @@ export function StringingTracker({
         .filter(
           (r) =>
             (view === "records" || r.source === view) &&
+            (statusFilter === "all" ||
+              (statusFilter === "completed" ? isCompleted(r) : !isCompleted(r))) &&
             (!query ||
               JSON.stringify(r).toLowerCase().includes(query.toLowerCase())),
         )
@@ -245,7 +250,7 @@ export function StringingTracker({
                 });
           return sortDir === "asc" ? result : -result;
         }),
-    [rows, view, query, sortKey, sortDir],
+    [rows, view, query, sortKey, sortDir, statusFilter],
   );
   const pro = rows.filter((r) => r.source === "prostring"),
     priv = rows.filter((r) => r.source === "private");
@@ -490,6 +495,22 @@ export function StringingTracker({
               <div>
                 <h2>{view === "records" ? "Complete history" : "Orders"}</h2>
                 <p>Imported from your Google Sheet in its original order.</p>
+                <div className="filters status-filters" aria-label="Filter jobs by completion status">
+                  {([
+                    ["all", "All"],
+                    ["todo", "To Do"],
+                    ["completed", "Completed"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={`chip ${statusFilter === value ? "selected" : ""}`}
+                      onClick={() => setStatusFilter(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="table-tools">
                 <input
@@ -508,6 +529,7 @@ export function StringingTracker({
                     <option value="date">Drop-off date</option>
                     <option value="collectionDate">Collection date</option>
                     <option value="name">Client</option>
+                    <option value="status">To Do / Completed</option>
                     <option value="payment">Paid / unpaid</option>
                     <option value="customerPrice">Customer price</option>
                     <option value="balance">Balance</option>
@@ -545,7 +567,7 @@ export function StringingTracker({
                     {view === "private" ? (
                       <><th>String cost</th><th>Profit</th></>
                     ) : null}
-                    {view !== "records" ? <th>Status</th> : null}
+                    <th>To Do / Completed</th>
                     <th>Payment</th>
                     <th>{view === "prostring" ? "Due to DM" : "Balance"}</th>
                     <th>Notes</th>
@@ -587,21 +609,20 @@ export function StringingTracker({
                       {view === "private" ? (
                         <><td>{gbp(n(r.stringCost))}</td><td><strong>{gbp(n(r.customerPrice) - n(r.stringCost))}</strong></td></>
                       ) : null}
-                      {view !== "records" ? (
-                        <td>
-                          <select
-                            className={`job-status ${String(r.status).toLowerCase() === "complete" ? "complete" : "todo"}`}
-                            value={String(r.status).toLowerCase() === "complete" ? "Complete" : "To do"}
-                            onChange={(e) => setJobStatus(r, e.target.value)}
-                          >
-                            <option>To do</option>
-                            <option>Complete</option>
-                          </select>
-                        </td>
-                      ) : null}
+                      <td>
+                        <select
+                          className={`job-status ${isCompleted(r) ? "complete" : "todo"}`}
+                          value={isCompleted(r) ? "Completed" : "To Do"}
+                          onChange={(e) => setJobStatus(r, e.target.value)}
+                        >
+                          <option>To Do</option>
+                          <option>Completed</option>
+                        </select>
+                      </td>
                       <td>
                         {r.source === "private" ? (
                           <select
+                            className="payment-select"
                             value={r.payment || "Unknown"}
                             onChange={(e) => setPayment(r, e.target.value)}
                           >
@@ -746,13 +767,13 @@ export function StringingTracker({
               <label>
                 Job status
                 <select
-                  value={String(draft.status).toLowerCase() === "complete" ? "Complete" : "To do"}
+                  value={isCompleted(draft) ? "Completed" : "To Do"}
                   onChange={(e) =>
                     setDraft({ ...draft, status: e.target.value })
                   }
                 >
-                  <option>To do</option>
-                  <option>Complete</option>
+                  <option>To Do</option>
+                  <option>Completed</option>
                 </select>
               </label>
               <label>

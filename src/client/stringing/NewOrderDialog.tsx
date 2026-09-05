@@ -47,7 +47,7 @@ const empty = (
   dueToMe: 0,
   cashHeld: 0,
   received: 0,
-  status: "To do",
+  status: "To Do",
   payment: source === "private" ? "Unpaid" : "Paid to Ray",
   notes: "",
 });
@@ -315,13 +315,13 @@ export function NewOrderDialog({
               <label>
                 Job status
                 <select
-                  value={draft.status || "To do"}
+                  value={["complete", "completed"].includes(String(draft.status).toLowerCase()) ? "Completed" : "To Do"}
                   onChange={(e) =>
                     setDraft({ ...draft, status: e.target.value })
                   }
                 >
-                  <option>To do</option>
-                  <option>Complete</option>
+                  <option>To Do</option>
+                  <option>Completed</option>
                 </select>
               </label>
               <label>
