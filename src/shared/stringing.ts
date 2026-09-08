@@ -1,3 +1,4 @@
+import type { DmRacketJob } from "./dm-rackets.js";
 export interface StringingRow {
   id: string;
   source: "private" | "prostring";
@@ -83,6 +84,7 @@ export interface StringingReferrer {
 }
 
 export interface StringingState {
+  dmRackets?: DmRacketJob[];
   referrers?: StringingReferrer[];
   rows: StringingRow[];
   adjustments: StringingAdjustment[];
@@ -101,6 +103,7 @@ export function isStringingState(value: unknown): value is StringingState {
     candidate.adjustments.every(isStringingAdjustment) &&
     Array.isArray(candidate.sundries) &&
     candidate.sundries.every(isStringingSundry) &&
+    (candidate.dmRackets === undefined || (Array.isArray(candidate.dmRackets) && candidate.dmRackets.every(isDmRacketJob))) &&
     (candidate.referrers === undefined || (Array.isArray(candidate.referrers) && candidate.referrers.every(isStringingReferrer)))
   );
 }
@@ -146,6 +149,12 @@ function isStringingReferrer(value: unknown): value is StringingReferrer {
   return typeof candidate.id === "string" && typeof candidate.name === "string" && Number.isSafeInteger(candidate.referralsPerReward) && Number(candidate.referralsPerReward) > 0 && (candidate.previouslyUsed === undefined || (Number.isSafeInteger(candidate.previouslyUsed) && candidate.previouslyUsed >= 0));
 }
 
-export function wouldDiscardReferrals(current: StringingState | undefined, incoming: StringingState): boolean {
-  return current?.referrers !== undefined && incoming.referrers === undefined;
+export function wouldDiscardTrackerData(current: StringingState | undefined, incoming: StringingState): boolean {
+  return (current?.referrers !== undefined && incoming.referrers === undefined) || (current?.dmRackets !== undefined && incoming.dmRackets === undefined);
+}
+
+function isDmRacketJob(value: unknown): value is DmRacketJob {
+  if (!value || typeof value !== "object") return false;
+  const job = value as Partial<DmRacketJob>;
+  return typeof job.id === "string" && Number.isSafeInteger(job.jobNumber) && Number(job.jobNumber) > 0 && typeof job.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(job.date) && Number.isFinite(Date.parse(job.date)) && [job.racket, job.mains, job.crosses, job.tension, job.notes].every(field => typeof field === "string");
 }

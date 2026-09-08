@@ -1,3 +1,5 @@
+import { DmRackets } from "./DmRackets";
+import type { DmRacketJob } from "../../shared/dm-rackets";
 import { Referrals, ReferralFields } from "./Referrals";
 import { defaultReferrers, saveReferralOrder, type Referrer } from "./referral-rewards";
 import { searchOrders } from "./order-search";
@@ -52,6 +54,7 @@ interface Row {
   notes?: string | null;
 };
 type View =
+  | "dm"
   | "summary"
   | "referrals"
   | "prostring"
@@ -144,6 +147,7 @@ export function StringingTracker({
     [saveStatus, setSaveStatus] = useState<
       "loading" | "saving" | "saved" | "error"
     >("loading");
+  const [dmRackets, setDmRackets] = useState<DmRacketJob[]>([]);
   const [theme, setTheme] = useState(() => localStorage.getItem("stringing-theme") ?? "dark");
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("stringing-theme", theme); }, [theme]);
   const [referrers, setReferrers] = useState<Referrer[]>(defaultReferrers);
@@ -169,6 +173,7 @@ export function StringingTracker({
         if (!active) return;
         if (state) {
           setRows(state.rows);
+          setDmRackets(state.dmRackets ?? []);
           setReferrers(state.referrers ?? defaultReferrers);
           setAdjustments(state.adjustments);
           setSundries(state.sundries ?? []);
@@ -187,7 +192,7 @@ export function StringingTracker({
             "content-type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers }),
+          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets }),
         });
         if (response.status === 401) {
           onLogout();
@@ -217,7 +222,7 @@ export function StringingTracker({
           "content-type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers }),
+        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets }),
       })
         .then((response) => {
           if (response.status === 401) {
@@ -232,7 +237,7 @@ export function StringingTracker({
         });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [rows, adjustments, sundries, expenses, strings, referrers, token, onLogout]);
+  }, [rows, adjustments, sundries, expenses, strings, referrers, dmRackets, token, onLogout]);
   const shown = useMemo(
     () =>
       searchOrders(rows, query)
@@ -348,6 +353,7 @@ export function StringingTracker({
               ["private", "Private clients"],
               ["balances", "Private balances"],
               ["referrals", "Referrals"],
+              ["dm", "DM rackets"],
               ["records", "All records"],
             ] as [View, string][]
           ).map(([id, label]) => (
@@ -413,6 +419,7 @@ export function StringingTracker({
             <h1>
               {
                 {
+                  dm: "DM rackets",
                   summary: "Summary",
                   referrals: "Referrals",
                   prostring: "ProString jobs",
@@ -429,7 +436,7 @@ export function StringingTracker({
 
           </div>
           <div className="head-actions">
-            {undo && !["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
+            {undo && !["dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
               <button
                 className="secondary"
                 onClick={() => {
@@ -440,7 +447,7 @@ export function StringingTracker({
                 ↶ Undo
               </button>
             ) : null}
-            {!["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
+            {!["dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
               <NewOrderDialog
                 rows={rows}
                 strings={strings}
@@ -456,7 +463,7 @@ export function StringingTracker({
             ) : null}
           </div>
         </div>
-        {!["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
+        {!["dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
           <div className="summary-grid">
             <article className="summary-card">
               <span>{view === "private" || view === "balances" ? "Total profit from private clients" : "Due to you from ProString"}</span>
@@ -484,6 +491,7 @@ export function StringingTracker({
             </article>
           </div>
         ) : null}
+        {view === "dm" ? <DmRackets jobs={dmRackets} onChange={setDmRackets} /> : null}
         {view === "summary" ? <SummaryDashboard rows={rows} adjustments={adjustments} expenses={expenses} /> : null}
         {view === "referrals" ? <Referrals rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={saveReferrer} onEditClient={id => setDraft(rows.find(row => row.id === id) ?? null)} /> : null}
         {view === "analytics" ? <Analytics rows={rows} /> : null}
@@ -499,7 +507,7 @@ export function StringingTracker({
           />
         ) : view === "admin" ? (
           <AdminReports rows={rows} adjustments={adjustments} />
-        ) : view === "summary" || view === "referrals" || view === "expenses" || view === "strings" || view === "analytics" ? (
+        ) : view === "dm" || view === "summary" || view === "referrals" || view === "expenses" || view === "strings" || view === "analytics" ? (
           null
         ) : (
           <>
