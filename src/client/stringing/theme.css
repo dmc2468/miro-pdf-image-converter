@@ -184,3 +184,27 @@
 .balance-list{overflow-x:auto}.balance-head,.balance-row{min-width:960px}.content{min-width:0}.referrals-card{margin-top:0}
 :root[data-theme="dark"] .records-wrap tfoot td{background:var(--surface-soft)}
 :root[data-theme="dark"] .stringing-login-access{background:var(--surface)}
+
+:root[data-theme="dark"] .finance-list,
+:root[data-theme="dark"] .finance-summary article {
+  background: var(--surface);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .string-labels,
+:root[data-theme="dark"] .finance-labels,
+:root[data-theme="dark"] .cost-preview {
+  background: var(--surface-soft);
+}
+:root[data-theme="dark"] .characteristic-grid > span.active {
+  background: #34383c;
+  color: #dadcd8;
+}
+:root[data-theme="dark"] .string-row.out-of-stock > :not(.edit-button) {
+  opacity: 1;
+}
+:root[data-theme="dark"] .toggle-switch {
+  background: #505450;
+}
+:root[data-theme="dark"] .toggle-switch.on {
+  background: #65715a;
+}
