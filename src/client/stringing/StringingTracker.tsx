@@ -138,7 +138,7 @@ export function StringingTracker({
     [query, setQuery] = useState(""),
     [undo, setUndo] = useState<Row[] | null>(null),
     [draft, setDraft] = useState<Row | null>(null),
-    [sortKey, setSortKey] = useState<SortKey>("date"),
+    [sortKey, setSortKey] = useState<SortKey>("row"),
     [sortDir, setSortDir] = useState<"asc" | "desc">("desc"),
     [statusFilter, setStatusFilter] = useState<"all" | "todo" | "completed">("all"),
     [saveStatus, setSaveStatus] = useState<
@@ -353,7 +353,15 @@ export function StringingTracker({
           ).map(([id, label]) => (
             <button
               key={id}
-              onClick={() => setView(id)}
+              onClick={() => {
+                setView(id);
+                if (id === "private" || id === "prostring") {
+                  setQuery("");
+                  setStatusFilter("all");
+                  setSortKey("row");
+                  setSortDir("desc");
+                }
+              }}
               className={"nav-item " + (view === id ? "active" : "")}
             >
               {label}
