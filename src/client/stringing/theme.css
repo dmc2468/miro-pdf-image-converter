@@ -208,3 +208,21 @@
 :root[data-theme="dark"] .toggle-switch.on {
   background: #65715a;
 }
+
+:root[data-theme="dark"] .dashboard-number,
+:root[data-theme="dark"] .dashboard-panel,
+:root[data-theme="dark"] .income-ring > div {
+  background: var(--surface);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .dashboard-number.primary-number {
+  background: var(--surface-soft);
+}
+:root[data-theme="dark"] .dashboard-number.primary-number > span,
+:root[data-theme="dark"] .dashboard-number.primary-number small {
+  color: var(--muted);
+}
+:root[data-theme="dark"] .payment-stats > div,
+:root[data-theme="dark"] .payment-progress {
+  background: var(--surface-soft);
+}
