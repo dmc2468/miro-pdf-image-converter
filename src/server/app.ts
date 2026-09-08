@@ -25,7 +25,7 @@ import { serializeTeamSpeakBridgeStatus } from "./repositories/teamspeak-bridges
 import { isVoiceCommandActionType, isVoiceCommandModifier, isVoiceCommandTargetApp, normaliseVoiceCommandInput, serializeVoiceCommand, type VoiceCommandRecord } from "./repositories/voice-commands.js";
 import { createPropertyConstraintsReport } from "./services/property-constraints.js";
 import { serializePropertySearch } from "./repositories/property-searches.js";
-import { isStringingState } from "../shared/stringing.js";
+import { isStringingState, wouldDiscardReferrals } from "../shared/stringing.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -775,6 +775,8 @@ export function createApp(repositories: Repositories, objectStore: ObjectStore):
       if (!isStringingState(request.body)) {
         throw new HttpError(400, "Invalid stringing tracker data.");
       }
+      const existing = await repositories.stringingStates.findForUser(user.id);
+      if (wouldDiscardReferrals(existing?.state, request.body)) throw new HttpError(409, "The tracker has been updated. Refresh this page before saving.");
       const record = await repositories.stringingStates.saveForUser(user.id, request.body);
       response.json({ ok: true, updatedAt: record.updatedAt.toISOString() });
     } catch (error) {

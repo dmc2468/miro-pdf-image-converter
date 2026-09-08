@@ -1,3 +1,7 @@
+import { Referrals, ReferralFields } from "./Referrals";
+import { defaultReferrers, saveReferralOrder, type Referrer } from "./referral-rewards";
+import { searchOrders } from "./order-search";
+import "./referrals.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import imported from "./data/orders.json";
 import importedAdjustments from "./data/adjustments.json";
@@ -11,13 +15,19 @@ import { AdminReports } from "./AdminReports";
 import { Analytics } from "./Analytics";
 import { NewOrderDialog } from "./NewOrderDialog";
 import { SummaryDashboard } from "./SummaryDashboard";
+
 import {
   Expenses,
   StringCosts,
   type Expense,
   type StringPrice,
 } from "./Expenses";
-type Row = {
+interface Row {
+  referrerId?: string;
+  rewardForId?: string;
+  referralRedeemed?: boolean;
+  referralRedeemedOn?: string;
+  referralRewardOrderId?: string;
   id: string;
   source: "private" | "prostring";
   row: number;
@@ -43,6 +53,7 @@ type Row = {
 };
 type View =
   | "summary"
+  | "referrals"
   | "prostring"
   | "private"
   | "balances"
@@ -123,16 +134,20 @@ export function StringingTracker({
       importedAdjustments as Adjustment[],
     ),
     [sundries, setSundries] = useState<Sundry[]>([]),
-    [view, setView] = useState<View>("summary"),
+    [view, setView] = useState<View>("private"),
     [query, setQuery] = useState(""),
     [undo, setUndo] = useState<Row[] | null>(null),
     [draft, setDraft] = useState<Row | null>(null),
-    [sortKey, setSortKey] = useState<SortKey>("row"),
+    [sortKey, setSortKey] = useState<SortKey>("date"),
     [sortDir, setSortDir] = useState<"asc" | "desc">("desc"),
     [statusFilter, setStatusFilter] = useState<"all" | "todo" | "completed">("all"),
     [saveStatus, setSaveStatus] = useState<
       "loading" | "saving" | "saved" | "error"
     >("loading");
+  const [theme, setTheme] = useState(() => localStorage.getItem("stringing-theme") ?? "dark");
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("stringing-theme", theme); }, [theme]);
+  const [referrers, setReferrers] = useState<Referrer[]>(defaultReferrers);
+  const saveReferrer = (referrer: Referrer) => setReferrers(current => [...current.filter(item => item.id !== referrer.id), referrer]);
   const [expenses, setExpenses] = useState<Expense[]>(startingExpenses),
     [strings, setStrings] = useState<StringPrice[]>(startingStrings);
   const storageReady = useRef(false),
@@ -154,6 +169,7 @@ export function StringingTracker({
         if (!active) return;
         if (state) {
           setRows(state.rows);
+          setReferrers(state.referrers ?? defaultReferrers);
           setAdjustments(state.adjustments);
           setSundries(state.sundries ?? []);
           setExpenses(state.expenses ?? startingExpenses);
@@ -171,7 +187,7 @@ export function StringingTracker({
             "content-type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings }),
+          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers }),
         });
         if (response.status === 401) {
           onLogout();
@@ -201,7 +217,7 @@ export function StringingTracker({
           "content-type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings }),
+        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers }),
       })
         .then((response) => {
           if (response.status === 401) {
@@ -216,17 +232,15 @@ export function StringingTracker({
         });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [rows, adjustments, sundries, expenses, strings, token, onLogout]);
+  }, [rows, adjustments, sundries, expenses, strings, referrers, token, onLogout]);
   const shown = useMemo(
     () =>
-      rows
+      searchOrders(rows, query)
         .filter(
           (r) =>
             (view === "records" || r.source === view) &&
             (statusFilter === "all" ||
-              (statusFilter === "completed" ? isCompleted(r) : !isCompleted(r))) &&
-            (!query ||
-              JSON.stringify(r).toLowerCase().includes(query.toLowerCase())),
+              (statusFilter === "completed" ? isCompleted(r) : !isCompleted(r))),
         )
         .sort((a, b) => {
           const av =
@@ -308,7 +322,7 @@ export function StringingTracker({
         }
       : draft;
     setUndo(rows);
-    setRows((rs) => rs.map((r) => (r.id === saved.id ? saved : r)));
+    setRows((rs) => saveReferralOrder(rs, saved));
     setDraft(null);
   }
   return (
@@ -320,6 +334,7 @@ export function StringingTracker({
             <strong>Studio McLeod</strong>
             <span>Private tools</span>
           </div>
+          <button className="theme-toggle" aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "☀" : "☾"}</button>
         </div>
         <nav>
           <a className="nav-item stringing-tools-link" href="/miro-converter">
@@ -332,6 +347,7 @@ export function StringingTracker({
               ["prostring", "ProString jobs"],
               ["private", "Private clients"],
               ["balances", "Private balances"],
+              ["referrals", "Referrals"],
               ["records", "All records"],
             ] as [View, string][]
           ).map(([id, label]) => (
@@ -385,11 +401,12 @@ export function StringingTracker({
         </header>
         <div className="page-head">
           <div>
-            <p className="eyebrow">STRINGING TRACKER</p>
+
             <h1>
               {
                 {
                   summary: "Summary",
+                  referrals: "Referrals",
                   prostring: "ProString jobs",
                   private: "Private clients",
                   balances: "Private balances",
@@ -401,26 +418,10 @@ export function StringingTracker({
                 }[view]
               }
             </h1>
-            <p>
-              {view === "summary"
-                ? "Your stringing business at a glance."
-                : view === "analytics"
-                ? "Compare monthly ProString and private-client performance."
-                : view === "admin"
-                  ? "Create, download and print private-client reports."
-                  : view === "records"
-                    ? "Your complete spreadsheet-style history in one place."
-                    : view === "balances"
-                      ? "See who owes you and who has money on account."
-                      : view === "prostring"
-                        ? "Track your fee and cash received; payments made directly to Ray need no follow-up."
-                        : view === "private"
-                          ? "Orders and payments made directly to you."
-                          : "Only payments that need your attention."}
-            </p>
+
           </div>
           <div className="head-actions">
-            {undo && !["summary","admin","analytics","expenses","strings"].includes(view) ? (
+            {undo && !["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
               <button
                 className="secondary"
                 onClick={() => {
@@ -431,13 +432,15 @@ export function StringingTracker({
                 ↶ Undo
               </button>
             ) : null}
-            {!["summary","admin","analytics","expenses","strings"].includes(view) ? (
+            {!["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
               <NewOrderDialog
                 rows={rows}
                 strings={strings}
+                referrers={referrers}
+                onAddReferrer={saveReferrer}
                 onAdd={(row) => {
                   setUndo(rows);
-                  setRows((current) => [...current, row as Row]);
+                  setRows((current) => saveReferralOrder(current, row as Row));
                   setQuery("");
                   setView(row.source === "prostring" ? "prostring" : "private");
                 }}
@@ -445,14 +448,14 @@ export function StringingTracker({
             ) : null}
           </div>
         </div>
-        {!["summary","admin","analytics","expenses","strings"].includes(view) ? (
+        {!["summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
           <div className="summary-grid">
             <article className="summary-card">
-              <span>Due to you from ProString</span>
-              <strong>{gbp(dueToMe)}</strong>
-              <small>Fees less cash you already hold</small>
+              <span>{view === "private" || view === "balances" ? "Total profit from private clients" : "Due to you from ProString"}</span>
+              <strong>{gbp(view === "private" || view === "balances" ? privateProfit : dueToMe)}</strong>
+              <small>{view === "private" || view === "balances" ? "All-time charges less recorded string costs" : "Fees less cash paid to DM directly"}</small>
             </article>
-            <article className="summary-card">
+            {view !== "prostring" ? <article className="summary-card">
               <span>Private clients unpaid</span>
               <strong>{gbp(privateOutstanding)}</strong>
               <small>
@@ -463,7 +466,7 @@ export function StringingTracker({
                 }{" "}
                 orders
               </small>
-            </article>
+            </article> : null}
             <article className="summary-card">
               <span>Historical jobs</span>
               <strong>{rows.length}</strong>
@@ -474,6 +477,7 @@ export function StringingTracker({
           </div>
         ) : null}
         {view === "summary" ? <SummaryDashboard rows={rows} adjustments={adjustments} expenses={expenses} /> : null}
+        {view === "referrals" ? <Referrals rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={saveReferrer} onEditClient={id => setDraft(rows.find(row => row.id === id) ?? null)} /> : null}
         {view === "analytics" ? <Analytics rows={rows} /> : null}
         {view === "expenses" ? <Expenses items={expenses} onChange={setExpenses} token={token} grossProfit={4558+rows.filter(r=>r.id.startsWith("new-")).reduce((s,r)=>s+(r.source==="prostring"?n(r.dueToMe):n(r.customerPrice)-n(r.stringCost)),0)} /> : null}
         {view === "strings" ? <StringCosts items={strings} onChange={setStrings} /> : null}
@@ -487,14 +491,14 @@ export function StringingTracker({
           />
         ) : view === "admin" ? (
           <AdminReports rows={rows} adjustments={adjustments} />
-        ) : view === "summary" || view === "expenses" || view === "strings" || view === "analytics" ? (
+        ) : view === "summary" || view === "referrals" || view === "expenses" || view === "strings" || view === "analytics" ? (
           null
         ) : (
           <>
             <div className="toolbar">
               <div>
                 <h2>{view === "records" ? "Complete history" : "Orders"}</h2>
-                <p>Imported from your Google Sheet in its original order.</p>
+
                 <div className="filters status-filters" aria-label="Filter jobs by completion status">
                   {([
                     ["all", "All"],
@@ -657,7 +661,7 @@ export function StringingTracker({
                             }
                           >
                             {gbp(Math.abs(orderBalance(r)))}{" "}
-                            {orderBalance(r) > 0 ? "owed" : "credit"}
+                            {orderBalance(r) > 0 ? "" : "credit"}
                           </span>
                         )}
                       </td>
@@ -799,6 +803,7 @@ export function StringingTracker({
                   )}
                 </select>
               </label>
+              {draft.source === "private" ? <ReferralFields order={draft} rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={fields => setDraft({ ...draft, ...fields } as Row)} /> : null}
               <label className="wide">
                 Notes
                 <textarea

@@ -4,6 +4,7 @@ import type { UserSession } from "../../shared/types";
 import { login } from "../src/api";
 import { StringingTracker } from "./StringingTracker";
 import "./stringing.css";
+import "./theme.css";
 
 const sessionKey = "studio-mcleod-session";
 

@@ -21,6 +21,11 @@ export interface StringingRow {
   stringCost?: unknown;
   labour?: unknown;
   notes?: string | null;
+  referrerId?: string;
+  rewardForId?: string;
+  referralRedeemed?: boolean;
+  referralRedeemedOn?: string;
+  referralRewardOrderId?: string;
 }
 
 export interface StringingAdjustment {
@@ -69,7 +74,16 @@ export interface StringingString {
   inStock?: boolean;
 }
 
+export interface StringingReferrer {
+  id: string;
+  name: string;
+  referralsPerReward: number;
+  previouslyUsed?: number;
+  historyNote?: string;
+}
+
 export interface StringingState {
+  referrers?: StringingReferrer[];
   rows: StringingRow[];
   adjustments: StringingAdjustment[];
   sundries: StringingSundry[];
@@ -86,7 +100,8 @@ export function isStringingState(value: unknown): value is StringingState {
     Array.isArray(candidate.adjustments) &&
     candidate.adjustments.every(isStringingAdjustment) &&
     Array.isArray(candidate.sundries) &&
-    candidate.sundries.every(isStringingSundry)
+    candidate.sundries.every(isStringingSundry) &&
+    (candidate.referrers === undefined || (Array.isArray(candidate.referrers) && candidate.referrers.every(isStringingReferrer)))
   );
 }
 
@@ -123,4 +138,14 @@ function isStringingSundry(value: unknown): value is StringingSundry {
     (candidate.direction === "ray-owes" || candidate.direction === "dm-owes") &&
     typeof candidate.complete === "boolean"
   );
+}
+
+function isStringingReferrer(value: unknown): value is StringingReferrer {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StringingReferrer>;
+  return typeof candidate.id === "string" && typeof candidate.name === "string" && Number.isSafeInteger(candidate.referralsPerReward) && Number(candidate.referralsPerReward) > 0 && (candidate.previouslyUsed === undefined || (Number.isSafeInteger(candidate.previouslyUsed) && candidate.previouslyUsed >= 0));
+}
+
+export function wouldDiscardReferrals(current: StringingState | undefined, incoming: StringingState): boolean {
+  return current?.referrers !== undefined && incoming.referrers === undefined;
 }

@@ -1,0 +1,186 @@
+:root {
+  color-scheme: light;
+  --surface: #fff;
+  --surface-soft: #f7f6f3;
+  --surface-hover: #fcfbfa;
+  --header-glass: rgba(255, 255, 255, 0.96);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f1f1ef;
+  --paper: #161718;
+  --line: #343638;
+  --muted: #a3a3a0;
+  --moss: #a9c19f;
+  --blue: #8ebbd5;
+  --clay: #dc8b68;
+  --surface: #202224;
+  --surface-soft: #292b2d;
+  --surface-hover: #27292b;
+  --header-glass: rgba(32, 34, 36, 0.96);
+}
+.theme-toggle {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  background: var(--surface-soft);
+}
+.brand .theme-toggle,
+.mobile-header .theme-toggle {
+  margin-left: auto;
+}
+.mobile-header .theme-toggle {
+  width: 38px;
+  height: 38px;
+  flex-basis: 38px;
+}
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .secondary,
+:root[data-theme="dark"] .summary-card,
+:root[data-theme="dark"] .chip,
+:root[data-theme="dark"] .orders-card,
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .edit-modal,
+:root[data-theme="dark"] .records-wrap,
+:root[data-theme="dark"] .balance-list,
+:root[data-theme="dark"] .client-history,
+:root[data-theme="dark"] .adjustments-card,
+:root[data-theme="dark"] .report-controls,
+:root[data-theme="dark"] .report-sheet,
+:root[data-theme="dark"] .chart-controls,
+:root[data-theme="dark"] .chart-summary article,
+:root[data-theme="dark"] .monthly-chart,
+:root[data-theme="dark"] .monthly-table,
+:root[data-theme="dark"] .empty-state {
+  background: var(--surface);
+}
+:root[data-theme="dark"] .records-wrap th,
+:root[data-theme="dark"] .balance-head,
+:root[data-theme="dark"] .client-job-head,
+:root[data-theme="dark"] .adjustment-header,
+:root[data-theme="dark"] .monthly-head,
+:root[data-theme="dark"] .report-row-head,
+:root[data-theme="dark"] .report-summary div,
+:root[data-theme="dark"] .new-order-start,
+:root[data-theme="dark"] .adjustment-preview,
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .avatar,
+:root[data-theme="dark"] .edit-head > button {
+  background: var(--surface-soft);
+}
+:root[data-theme="dark"] .records-wrap tbody tr:hover {
+  background: var(--surface-hover);
+}
+:root[data-theme="dark"] .records-wrap th:last-child,
+:root[data-theme="dark"] .records-wrap td:last-child {
+  background: var(--surface);
+}
+:root[data-theme="dark"] .records-wrap th:last-child {
+  background: var(--surface-soft);
+}
+:root[data-theme="dark"] .sundry-row.complete {
+  background: var(--surface-soft);
+}
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .search,
+:root[data-theme="dark"] .edit-button,
+:root[data-theme="dark"] .more-button,
+:root[data-theme="dark"] .quick-amounts button,
+:root[data-theme="dark"] .sundry-check {
+  background: var(--surface);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .brand-mark,
+:root[data-theme="dark"] .primary,
+:root[data-theme="dark"] .chip.selected,
+:root[data-theme="dark"] .pay-button,
+:root[data-theme="dark"] .edit-button {
+  background: #f1f1ef;
+  color: #171819;
+  border-color: #f1f1ef;
+}
+:root[data-theme="dark"] .mobile-header {
+  background: var(--header-glass);
+}
+:root[data-theme="dark"] .payment-status.paid,
+:root[data-theme="dark"] .source.private,
+:root[data-theme="dark"] .you-owe,
+:root[data-theme="dark"] .settled {
+  background: #293329;
+  color: #b8d2ad;
+}
+:root[data-theme="dark"] .payment-status.unpaid {
+  background: #303234;
+  color: #c7c7c3;
+}
+:root[data-theme="dark"] .payment-status.short,
+:root[data-theme="dark"] .owes-you {
+  background: #432a25;
+  color: #f0a28b;
+}
+:root[data-theme="dark"] .payment-status.over,
+:root[data-theme="dark"] .source.prostring {
+  background: #263640;
+  color: #a8d4ed;
+}
+@media (max-width: 700px) {
+  .mobile-header {
+    background: var(--header-glass);
+  }
+}
+@media print {
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --ink: #1a1a1a;
+    --paper: #fff;
+    --line: #ddd;
+    --muted: #666;
+  }
+}
+
+
+:root[data-theme="dark"] .nav-item.active,
+:root[data-theme="dark"] .nav-item.active:hover {
+  background: #34383c;
+  color: #f1f1ef;
+}
+.sort-arrow {
+  background: var(--surface);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .sort-arrow {
+  background: var(--surface-soft);
+  color: #f1f1ef;
+}
+.records-wrap select:has(option:checked:first-child) {
+  background: #ececeb;
+  color: #50534f;
+  border-color: #c9cbc7;
+}
+:root[data-theme="dark"] .records-wrap select:has(option:checked:first-child) {
+  background: #343638;
+  color: #dadcd8;
+  border-color: #505450;
+}
+:root[data-theme="dark"] .records-wrap select:has(option:checked:nth-child(2)) {
+  background: #432a25;
+  color: #f0a28b;
+  border-color: #754b40;
+}
+.brand>div:not(.brand-mark){min-width:0;display:flex;flex-direction:column;font-size:14px}.brand .brand-mark{flex-shrink:0}.brand{gap:10px;padding-inline:16px}
+
+.balance-list{overflow-x:auto}.balance-head,.balance-row{min-width:960px}.content{min-width:0}.referrals-card{margin-top:0}
+:root[data-theme="dark"] .records-wrap tfoot td{background:var(--surface-soft)}
+:root[data-theme="dark"] .stringing-login-access{background:var(--surface)}

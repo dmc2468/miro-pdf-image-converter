@@ -1,7 +1,14 @@
+import { ReferralFields } from "./Referrals";
+import type { Referrer } from "./referral-rewards";
 "use client";
 import { useMemo, useState } from "react";
 
-export type OrderRow = {
+export interface OrderRow {
+  referrerId?: string;
+  rewardForId?: string;
+  referralRedeemed?: boolean;
+  referralRedeemedOn?: string;
+  referralRewardOrderId?: string;
   id: string;
   source: string;
   row: number;
@@ -55,9 +62,13 @@ const empty = (
 export function NewOrderDialog({
   rows,
   strings,
+  referrers,
+  onAddReferrer,
   onAdd,
 }: {
   rows: OrderRow[];
+  referrers: Referrer[];
+  onAddReferrer: (referrer: Referrer) => void;
   strings: {id:string;brand:string;name:string;gauge:string;costPerRacket:number;priceToCustomer?:number;customerPriceOverride?:number|null}[];
   onAdd: (row: OrderRow) => void;
 }) {
@@ -347,6 +358,7 @@ export function NewOrderDialog({
                   )}
                 </select>
               </label>
+              {source === "private" ? <ReferralFields order={draft} rows={rows} referrers={referrers} onAdd={onAddReferrer} onChange={fields => setDraft({ ...draft, ...fields })} /> : null}
               <label className="wide">
                 Notes
                 <textarea
