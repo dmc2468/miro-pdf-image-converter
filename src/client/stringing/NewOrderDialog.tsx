@@ -1,3 +1,4 @@
+import { CalculationInput } from "./CalculationInput";
 import { ReferralFields } from "./Referrals";
 import type { Referrer } from "./referral-rewards";
 "use client";
@@ -61,12 +62,14 @@ const empty = (
 
 export function NewOrderDialog({
   rows,
+  defaultSource = "private",
   strings,
   referrers,
   onAddReferrer,
   onAdd,
 }: {
   rows: OrderRow[];
+  defaultSource?: "private" | "prostring";
   referrers: Referrer[];
   onAddReferrer: (referrer: Referrer) => void;
   strings: {id:string;brand:string;name:string;gauge:string;costPerRacket:number;priceToCustomer?:number;customerPriceOverride?:number|null}[];
@@ -155,7 +158,7 @@ export function NewOrderDialog({
     <>
       <button
         className="primary"
-        onClick={() => setDraft(empty("private", rows))}
+        onClick={() => {setRepeat(""); setDraft(empty(defaultSource, rows));}}
       >
         + New order
       </button>
@@ -172,7 +175,7 @@ export function NewOrderDialog({
             <div className="edit-head">
               <div>
                 <p className="eyebrow">NEW ORDER</p>
-                <h2>Add stringing job</h2>
+                <h2>{source === "private" ? "New private client job" : "New ProString job"}</h2>
                 <small>Start fresh or reuse a previous customer’s setup.</small>
               </div>
               <button type="button" onClick={() => setDraft(null)}>
@@ -254,7 +257,7 @@ export function NewOrderDialog({
                 Main string
                 <select value={selectedStringValue ? stringLabel(selectedStringValue) : draft.main || ""} onChange={(e) => {const selected=strings.find(x=>stringLabel(x)===e.target.value);setDraft({...draft,main:e.target.value,stringCost:selected?.costPerRacket??0,customerPrice:selected?.customerPriceOverride??selected?.priceToCustomer??draft.customerPrice})}}><option value="">Choose string and gauge</option>{draft.main&&!selectedStringValue?<option value={draft.main}>{draft.main} (existing)</option>:null}{strings.map(x=><option key={x.id} value={stringLabel(x)}>{stringLabel(x)}</option>)}</select>
               </label>
-              <label>String cost<input readOnly type="number" value={n(draft.stringCost)} /></label>
+              {source === "private" ? <label>String cost<input readOnly type="number" value={n(draft.stringCost)} /></label> : null}
               <label>
                 Cross string
                 <input
@@ -264,7 +267,7 @@ export function NewOrderDialog({
                   }
                 />
               </label>
-              <label>
+              <label className={source === "prostring" ? "wide" : undefined}>
                 Tension
                 <input
                   value={String(
@@ -283,10 +286,10 @@ export function NewOrderDialog({
               </label>
               <label>
                 Customer price
-                <input
+                <CalculationInput
                   min="0"
                   step="0.01"
-                  type="number"
+
                   value={n(draft.customerPrice)}
                   onChange={(e) =>
                     setDraft({
@@ -299,10 +302,10 @@ export function NewOrderDialog({
               {source === "private" ? (
                 <label>
                   Amount received
-                  <input
+                  <CalculationInput
                     min="0"
                     step="0.01"
-                    type="number"
+
                     value={n(draft.received)}
                     onChange={(e) =>
                       setDraft({ ...draft, received: Number(e.target.value) })
@@ -312,10 +315,10 @@ export function NewOrderDialog({
               ) : (
                 <label>
                   Due to DM
-                  <input
+                  <CalculationInput
                     min="0"
                     step="0.01"
-                    type="number"
+
                     value={n(draft.dueToMe)}
                     onChange={(e) =>
                       setDraft({ ...draft, dueToMe: Number(e.target.value) })

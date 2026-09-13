@@ -1,3 +1,4 @@
+import { CalculationInput } from "./CalculationInput";
 "use client";
 import { useRef, useState } from "react";
 import { clientKey, referralTotals, referredClients, type Referrer, type ReferralOrder } from "./referral-rewards";
@@ -22,7 +23,7 @@ export function AddReferrer({ referrers, onSave }: {
         setError("");
         setOpen(false);
     }
-    return <div className="add-referrer">{open ? <><label>Referrer name<input value={name} onChange={e => setName(e.target.value)}/></label><label>Referrals per free job<input type="number" min="1" step="1" value={ratio} onChange={e => setRatio(e.target.value)}/></label>{error ? <p role="alert">{error}</p> : null}<button type="button" className="secondary" onClick={add}>Save referrer</button> <button type="button" className="secondary" onClick={() => { setOpen(false); setError(""); }}>Cancel</button></> : <button type="button" className="secondary" onClick={() => setOpen(true)}>+ Add referrer</button>}</div>;
+    return <div className="add-referrer">{open ? <><label>Referrer name<input value={name} onChange={e => setName(e.target.value)}/></label><label>Referrals per free job<CalculationInput  min="1" step="1" value={ratio} onChange={e => setRatio(e.target.value)}/></label>{error ? <p role="alert">{error}</p> : null}<button type="button" className="secondary" onClick={add}>Save referrer</button> <button type="button" className="secondary" onClick={() => { setOpen(false); setError(""); }}>Cancel</button></> : <button type="button" className="secondary" onClick={() => setOpen(true)}>+ Add referrer</button>}</div>;
 }
 export function ReferralFields({ order, rows, referrers, onChange, onAdd }: {
     order: ReferralOrder;
@@ -39,7 +40,7 @@ function Deal({ referrer, onChange }: {
 }) {
     const [editing, setEditing] = useState(false), [ratio, setRatio] = useState(String(referrer.referralsPerReward)), [used, setUsed] = useState(String(referrer.previouslyUsed ?? 0)), [note, setNote] = useState(referrer.historyNote ?? "");
     return editing ? <form className="deal-editor" onSubmit={e => { e.preventDefault(); const count = Number(ratio), previous = Number(used); if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(previous) || previous < 0)
-        return; onChange({ ...referrer, referralsPerReward: count, previouslyUsed: previous, historyNote: note.trim() }); setEditing(false); }}><label>Referrals per free job<input required type="number" min="1" step="1" value={ratio} onChange={e => setRatio(e.target.value)}/></label><small>Recalculates rewards from all recorded referrals.</small><label>Previously used free jobs<input required type="number" min="0" step="1" value={used} onChange={e => setUsed(e.target.value)}/></label><small>Free jobs already provided that are not linked to an order as a referral reward. Do not count the same job twice.</small><label>Reward history notes<input value={note} onChange={e => setNote(e.target.value)}/></label><button className="secondary">Save deal</button><button type="button" className="secondary" onClick={() => setEditing(false)}>Cancel</button></form> : <button type="button" className="edit-button" onClick={() => { setRatio(String(referrer.referralsPerReward)); setUsed(String(referrer.previouslyUsed ?? 0)); setNote(referrer.historyNote ?? ""); setEditing(true); }}>Edit deal</button>;
+        return; onChange({ ...referrer, referralsPerReward: count, previouslyUsed: previous, historyNote: note.trim() }); setEditing(false); }}><label>Referrals per free job<CalculationInput required  min="1" step="1" value={ratio} onChange={e => setRatio(e.target.value)}/></label><small>Recalculates rewards from all recorded referrals.</small><label>Previously used free jobs<CalculationInput required  min="0" step="1" value={used} onChange={e => setUsed(e.target.value)}/></label><small>Free jobs already provided that are not linked to an order as a referral reward. Do not count the same job twice.</small><label>Reward history notes<input value={note} onChange={e => setNote(e.target.value)}/></label><button className="secondary">Save deal</button><button type="button" className="secondary" onClick={() => setEditing(false)}>Cancel</button></form> : <button type="button" className="edit-button" onClick={() => { setRatio(String(referrer.referralsPerReward)); setUsed(String(referrer.previouslyUsed ?? 0)); setNote(referrer.historyNote ?? ""); setEditing(true); }}>Edit deal</button>;
 }
 interface ReferralProps {
     onEditClient: (id: string) => void;

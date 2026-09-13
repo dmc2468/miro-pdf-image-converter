@@ -1,3 +1,4 @@
+import { CalculationInput } from "./CalculationInput";
 import { DmRackets } from "./DmRackets";
 import type { DmRacketJob } from "../../shared/dm-rackets";
 import { Referrals, ReferralFields } from "./Referrals";
@@ -449,6 +450,7 @@ export function StringingTracker({
             ) : null}
             {!["dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
               <NewOrderDialog
+                defaultSource={view === "prostring" ? "prostring" : "private"}
                 rows={rows}
                 strings={strings}
                 referrers={referrers}
@@ -764,7 +766,7 @@ export function StringingTracker({
               ).map(([label, key, type]) => (
                 <label key={String(key)}>
                   {label}
-                  <input
+                  {type === "number" ? <CalculationInput value={String(draft[key] ?? "")} step="0.01" onChange={event => setDraft({...draft, [key]: Number(event.target.value)})} /> : <input
                     type={type}
                     step={type === "number" ? "0.01" : undefined}
                     value={
@@ -781,7 +783,7 @@ export function StringingTracker({
                             : e.target.value,
                       })
                     }
-                  />
+                  />}
                 </label>
               ))}
               <label>

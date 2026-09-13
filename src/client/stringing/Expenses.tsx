@@ -1,3 +1,4 @@
+import { CalculationInput } from "./CalculationInput";
 import { useState } from "react";
 export type Expense = {
   id: string;
@@ -209,8 +210,8 @@ export function Expenses({
               </label>
               <label>
                 Amount
-                <input
-                  type="number"
+                <CalculationInput
+
                   step=".01"
                   value={draft.amount}
                   onChange={(e) =>
@@ -344,10 +345,10 @@ export function StringCosts({
               {d.brand.toLowerCase()==="yonex"?<><label>Colour<input value={d.colour??""} onChange={e=>setD({...d,colour:e.target.value})}/></label><label>Hardness<input value={d.hardness??""} onChange={e=>setD({...d,hardness:e.target.value})}/></label><label className="edit-wide">Characteristics<input value={(d.characteristics??[]).join(", ")} onChange={e=>setD({...d,characteristics:e.target.value.split(",").map(value=>value.trim()).filter(Boolean)})}/></label></>:null}
               <label>In stock<select value={d.inStock?"yes":"no"} onChange={e=>setD({...d,inStock:e.target.value==="yes"})}><option value="yes">Yes</option><option value="no">No</option></select></label>
               <label>How I bought it<select value={d.purchaseFormat ?? "set"} onChange={e=>setD({...d,purchaseFormat:e.target.value as "set"|"100m"|"200m"})}><option value="set">Set (12 m)</option><option value="100m">100 m reel</option><option value="200m">200 m reel</option></select></label>
-              {d.purchaseFormat==="100m"?<label>Price paid for 100 m reel<input autoFocus type="number" step=".01" value={d.reel100Cost ?? 0} onChange={e=>setD({...d,reel100Cost:Number(e.target.value)})}/></label>:d.purchaseFormat==="200m"?<label>Price paid for 200 m reel<input autoFocus type="number" step=".01" value={d.reel200Cost ?? 0} onChange={e=>setD({...d,reel200Cost:Number(e.target.value)})}/></label>:<label>Price paid for set<input autoFocus type="number" step=".01" value={d.setCost ?? 0} onChange={e=>setD({...d,setCost:Number(e.target.value)})}/></label>}
+              {d.purchaseFormat==="100m"?<label>Price paid for 100 m reel<CalculationInput autoFocus  step=".01" value={d.reel100Cost ?? 0} onChange={e=>setD({...d,reel100Cost:Number(e.target.value)})}/></label>:d.purchaseFormat==="200m"?<label>Price paid for 200 m reel<CalculationInput autoFocus  step=".01" value={d.reel200Cost ?? 0} onChange={e=>setD({...d,reel200Cost:Number(e.target.value)})}/></label>:<label>Price paid for set<CalculationInput autoFocus  step=".01" value={d.setCost ?? 0} onChange={e=>setD({...d,setCost:Number(e.target.value)})}/></label>}
               <label>Customer price source<select value={d.priceSource??sources[0]?.value??"manual"} onChange={e=>setD({...d,priceSource:e.target.value})}>{sources.map(source=><option key={source.value} value={source.value}>{source.label}</option>)}</select></label>
-              <label>Online set price<input type="number" step=".01" value={d.priceToCustomer ?? d.setCost ?? 0} onChange={e=>setD({...d,priceToCustomer:Number(e.target.value)})}/></label>
-              <label>Customer price override (optional)<input type="number" step=".01" placeholder="Use online price" value={d.customerPriceOverride ?? ""} onChange={e=>setD({...d,customerPriceOverride:e.target.value===""?null:Number(e.target.value)})}/></label>
+              <label>Online set price<CalculationInput  step=".01" value={d.priceToCustomer ?? d.setCost ?? 0} onChange={e=>setD({...d,priceToCustomer:Number(e.target.value)})}/></label>
+              <label>Customer price override (optional)<CalculationInput  step=".01" placeholder="Use online price" value={d.customerPriceOverride ?? ""} onChange={e=>setD({...d,customerPriceOverride:e.target.value===""?null:Number(e.target.value)})}/></label>
               {selectedSource?.value!=="manual"?<div className="price-lookup"><div><strong>{selectedSource?.label} set price</strong><span>Search the selected retailer for this exact string and gauge.</span></div><button type="button" className="secondary" onClick={()=>window.open(`https://www.google.com/search?q=${encodeURIComponent(`${selectedSource?.domain?`site:${selectedSource.domain} `:""}${d.brand} ${d.name} ${d.gauge} tennis string 12m set UK`)}`,"_blank","noopener,noreferrer")}>Look up set price</button></div>:<div className="price-lookup"><div><strong>Manual customer price</strong><span>Enter the set price yourself for this string.</span></div></div>}
               <div className="cost-preview"><span>Customer price</span><strong>{gbp(d.customerPriceOverride ?? d.priceToCustomer ?? d.setCost ?? 0)}</strong></div>
               <div className="cost-preview"><span>Cost per racket</span><strong>{gbp(calculatedCost(d))}</strong></div>

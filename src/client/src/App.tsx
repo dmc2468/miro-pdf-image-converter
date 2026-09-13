@@ -551,6 +551,7 @@ function AuthPanel({ onSession }: { onSession: (session: UserSession) => void })
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -572,7 +573,7 @@ function AuthPanel({ onSession }: { onSession: (session: UserSession) => void })
           <p className="mt-1 text-sm text-muted">Sign in to access private tools</p>
         </div>
         <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
-          <div className="space-y-4">
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <label className="field-label">
               Email
               <input className="field-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
@@ -582,11 +583,11 @@ function AuthPanel({ onSession }: { onSession: (session: UserSession) => void })
               <input className="field-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </label>
             {error ? <Alert message={error} onDismiss={() => setError(null)} /> : null}
-            <button className="primary-button w-full" type="button" disabled={busy} onClick={submit}>
+            <button className="primary-button w-full" type="submit" disabled={busy}>
               {busy ? <RefreshCw className="animate-spin" size={18} /> : null}
               Sign in
             </button>
-          </div>
+          </form>
         </div>
         <p className="mt-6 text-center text-xs text-muted">
           Studio McLeod Architecture Ltd &middot; Private tools for the studio team
