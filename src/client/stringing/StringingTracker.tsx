@@ -1,3 +1,8 @@
+import { Planner } from "./schedule-planner";
+import { PlannerReminders } from "./planner-reminders";
+import { LogisticsFields } from "./logistics-fields";
+import { migrateRow, stage, emptyPlanner, workflowFields, type Logistics, type PlannerSettings } from "../../shared/stringing-scheduling";
+import "./planner.css";
 import { CalculationInput } from "./CalculationInput";
 import { DmRackets } from "./DmRackets";
 import type { DmRacketJob } from "../../shared/dm-rackets";
@@ -25,7 +30,7 @@ import {
   type Expense,
   type StringPrice,
 } from "./Expenses";
-interface Row {
+interface Row extends Logistics {
   referrerId?: string;
   rewardForId?: string;
   referralRedeemed?: boolean;
@@ -55,6 +60,7 @@ interface Row {
   notes?: string | null;
 };
 type View =
+  | "planner"
   | "dm"
   | "summary"
   | "referrals"
@@ -76,7 +82,7 @@ const date = (v?: string | null) =>
   v ? new Date(v).toLocaleDateString("en-GB") : "—";
 const jobNumber = (r: Row) => (r.source === "private" ? r.row - 2 : r.row - 1);
 const isCompleted = (r: Row) =>
-  ["complete", "completed"].includes(String(r.status).trim().toLowerCase());
+  ["Completed", "Delivered"].includes(stage(r));
 const orderBalance = (r: Row) =>
   r.source === "prostring" ? n(r.dueToMe) : n(r.customerPrice) - n(r.received);
 const startingExpenses: Expense[] = [
@@ -133,7 +139,7 @@ export function StringingTracker({
   email: string;
   onLogout: () => void;
 }) {
-  const [rows, setRows] = useState<Row[]>(imported as Row[]),
+  const [rows, setRows] = useState<Row[]>((imported as Row[]).map(migrateRow)),
     [adjustments, setAdjustments] = useState<Adjustment[]>(
       importedAdjustments as Adjustment[],
     ),
@@ -148,6 +154,7 @@ export function StringingTracker({
     [saveStatus, setSaveStatus] = useState<
       "loading" | "saving" | "saved" | "error"
     >("loading");
+  const [planner, setPlanner] = useState<PlannerSettings>(emptyPlanner);
   const [dmRackets, setDmRackets] = useState<DmRacketJob[]>([]);
   const [theme, setTheme] = useState(() => localStorage.getItem("stringing-theme") ?? "dark");
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("stringing-theme", theme); }, [theme]);
@@ -173,7 +180,8 @@ export function StringingTracker({
       .then(async ({ state }) => {
         if (!active) return;
         if (state) {
-          setRows(state.rows);
+          setRows((state.rows as Row[]).map(migrateRow));
+          setPlanner(state.planner ?? emptyPlanner);
           setDmRackets(state.dmRackets ?? []);
           setReferrers(state.referrers ?? defaultReferrers);
           setAdjustments(state.adjustments);
@@ -193,7 +201,7 @@ export function StringingTracker({
             "content-type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets }),
+          body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets, planner }),
         });
         if (response.status === 401) {
           onLogout();
@@ -223,7 +231,7 @@ export function StringingTracker({
           "content-type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets }),
+        body: JSON.stringify({ rows, adjustments, sundries, expenses, strings, referrers, dmRackets, planner }),
       })
         .then((response) => {
           if (response.status === 401) {
@@ -238,7 +246,7 @@ export function StringingTracker({
         });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [rows, adjustments, sundries, expenses, strings, referrers, dmRackets, token, onLogout]);
+  }, [rows, adjustments, sundries, expenses, strings, referrers, dmRackets, planner, token, onLogout]);
   const shown = useMemo(
     () =>
       searchOrders(rows, query)
@@ -312,7 +320,7 @@ export function StringingTracker({
     setUndo(rows);
     setRows((currentRows) =>
       currentRows.map((item) =>
-        item.id === row.id ? { ...item, status: value } : item,
+        item.id === row.id ? { ...item, ...workflowFields(value === "Completed" ? "Completed" : "Ready to string") } : item,
       ),
     );
   }
@@ -352,6 +360,7 @@ export function StringingTracker({
               ["summary", "Summary"],
               ["prostring", "ProString jobs"],
               ["private", "Private clients"],
+              ["planner", "Collection & delivery"],
               ["balances", "Private balances"],
               ["referrals", "Referrals"],
               ["dm", "DM rackets"],
@@ -413,6 +422,7 @@ export function StringingTracker({
         <header className="mobile-header">
           <div className="brand-mark small">SM</div>
           <strong>Stringing tracker</strong>
+          <select className="mobile-view-select" aria-label="Page" value={view} onChange={event=>setView(event.target.value as View)}>{([ ["summary","Summary"], ["prostring","ProString jobs"], ["private","Private clients"], ["planner","Collection & delivery"], ["balances","Private balances"], ["referrals","Referrals"], ["dm","DM rackets"], ["records","All records"], ["analytics","Analytics"], ["admin","Reports"], ["expenses","Expenses"], ["strings","String Prices"] ] as const).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
         </header>
         <div className="page-head">
           <div>
@@ -425,6 +435,7 @@ export function StringingTracker({
                   referrals: "Referrals",
                   prostring: "ProString jobs",
                   private: "Private clients",
+                  planner: "Collection & delivery",
                   balances: "Private balances",
                   records: "All records",
                   analytics: "Monthly analytics",
@@ -465,7 +476,7 @@ export function StringingTracker({
             ) : null}
           </div>
         </div>
-        {!["dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
+        {!["planner","dm","summary","referrals","admin","analytics","expenses","strings"].includes(view) ? (
           <div className="summary-grid">
             <article className="summary-card">
               <span>{view === "private" || view === "balances" ? "Total profit from private clients" : "Due to you from ProString"}</span>
@@ -493,6 +504,8 @@ export function StringingTracker({
             </article>
           </div>
         ) : null}
+        <PlannerReminders rows={rows} settings={planner} ready={storageReady.current} />
+        {view === "planner" ? <Planner rows={rows} settings={planner} ready={storageReady.current} onSettings={setPlanner} onUpdate={(id,fields)=>{setUndo(rows);setRows(current=>current.map(row=>row.id===id?{...row,...fields,...(fields.workflowStatus?workflowFields(fields.workflowStatus):{})}:row))}} onEdit={id=>setDraft(rows.find(row=>row.id===id)??null)}/> : null}
         {view === "dm" ? <DmRackets jobs={dmRackets} onChange={setDmRackets} /> : null}
         {view === "summary" ? <SummaryDashboard rows={rows} adjustments={adjustments} expenses={expenses} /> : null}
         {view === "referrals" ? <Referrals rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={saveReferrer} onEditClient={id => setDraft(rows.find(row => row.id === id) ?? null)} /> : null}
@@ -509,7 +522,7 @@ export function StringingTracker({
           />
         ) : view === "admin" ? (
           <AdminReports rows={rows} adjustments={adjustments} />
-        ) : view === "dm" || view === "summary" || view === "referrals" || view === "expenses" || view === "strings" || view === "analytics" ? (
+        ) : view === "planner" || view === "dm" || view === "summary" || view === "referrals" || view === "expenses" || view === "strings" || view === "analytics" ? (
           null
         ) : (
           <>
@@ -549,7 +562,7 @@ export function StringingTracker({
                   >
                     <option value="row">Job #</option>
                     <option value="date">Drop-off date</option>
-                    <option value="collectionDate">Collection date</option>
+                    <option value="completionDate">Completion date</option>
                     <option value="name">Client</option>
                     <option value="status">To Do / Completed</option>
                     <option value="payment">Paid / unpaid</option>
@@ -580,7 +593,8 @@ export function StringingTracker({
                     ) : null}
                     <th>Job #</th>
                     <th>Drop-off</th>
-                    <th>Collection</th>
+                    <th>Complete by</th>
+                    {view === "private" ? <th>Collection type</th> : null}
                     <th>Client</th>
                     <th>Racket</th>
                     <th>String setup</th>
@@ -609,8 +623,9 @@ export function StringingTracker({
                       <td>{jobNumber(r)}</td>
                       <td>{date(r.date)}</td>
                       <td className="collection-date">
-                        {date(r.collectionDate)}
+                        {date(r.completionDate)}
                       </td>
+                      {view === "private" ? <td>{r.collectionType || "—"}</td> : null}
                       <td>
                         <strong>{r.name}</strong>
                       </td>
@@ -742,7 +757,7 @@ export function StringingTracker({
               {(
                 [
                   ["Drop-off date", "date", "date"],
-                  ["Collection date", "collectionDate", "date"],
+                  ["Completion date", "completionDate", "date"],
                   ["Client", "name", "text"],
                   ["Racket", "racquet", "text"],
                   ["Main string", "main", "text"],
@@ -791,7 +806,7 @@ export function StringingTracker({
                 <select
                   value={isCompleted(draft) ? "Completed" : "To Do"}
                   onChange={(e) =>
-                    setDraft({ ...draft, status: e.target.value })
+                    setDraft({ ...draft, ...workflowFields(e.target.value === "Completed" ? "Completed" : "Ready to string") })
                   }
                 >
                   <option>To Do</option>
@@ -821,6 +836,7 @@ export function StringingTracker({
                   )}
                 </select>
               </label>
+              <LogisticsFields row={draft} onChange={fields=>setDraft({...draft,...fields,...(fields.workflowStatus?workflowFields(fields.workflowStatus):{})})}/>
               {draft.source === "private" ? <ReferralFields order={draft} rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={fields => setDraft({ ...draft, ...fields } as Row)} /> : null}
               <label className="wide">
                 Notes

@@ -1,5 +1,6 @@
+import type { Logistics, PlannerSettings } from "./stringing-scheduling.js";
 import type { DmRacketJob } from "./dm-rackets.js";
-export interface StringingRow {
+export interface StringingRow extends Logistics {
   id: string;
   source: "private" | "prostring";
   row: number;
@@ -84,6 +85,7 @@ export interface StringingReferrer {
 }
 
 export interface StringingState {
+  planner?: PlannerSettings;
   dmRackets?: DmRacketJob[];
   referrers?: StringingReferrer[];
   rows: StringingRow[];
@@ -99,6 +101,7 @@ export function isStringingState(value: unknown): value is StringingState {
   return (
     Array.isArray(candidate.rows) &&
     candidate.rows.every(isStringingRow) &&
+    (candidate.planner === undefined || isPlannerSettings(candidate.planner)) &&
     Array.isArray(candidate.adjustments) &&
     candidate.adjustments.every(isStringingAdjustment) &&
     Array.isArray(candidate.sundries) &&
@@ -150,11 +153,25 @@ function isStringingReferrer(value: unknown): value is StringingReferrer {
 }
 
 export function wouldDiscardTrackerData(current: StringingState | undefined, incoming: StringingState): boolean {
-  return (current?.referrers !== undefined && incoming.referrers === undefined) || (current?.dmRackets !== undefined && incoming.dmRackets === undefined);
+  return (current?.planner !== undefined && incoming.planner === undefined) || (current?.referrers !== undefined && incoming.referrers === undefined) || (current?.dmRackets !== undefined && incoming.dmRackets === undefined);
 }
 
 function isDmRacketJob(value: unknown): value is DmRacketJob {
   if (!value || typeof value !== "object") return false;
   const job = value as Partial<DmRacketJob>;
   return typeof job.id === "string" && Number.isSafeInteger(job.jobNumber) && Number(job.jobNumber) > 0 && typeof job.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(job.date) && Number.isFinite(Date.parse(job.date)) && [job.racket, job.mains, job.crosses, job.tension, job.notes].every(field => typeof field === "string");
+}
+
+function isPlannerSettings(value: unknown): value is PlannerSettings {
+ if (!value || typeof value !== "object") return false;
+ const p = value as Partial<PlannerSettings>;
+ const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(item => typeof item === "string");
+ const record = (v: unknown, kind: "string" | "boolean") => !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every(item => typeof item === kind);
+ return strings(p.unavailable) && record(p.visits, "boolean") &&
+  (p.unavailableDays === undefined || strings(p.unavailableDays)) &&
+  (p.preferences === undefined || (strings(p.preferences) && p.preferences.every(item => ["morning", "lunch", "evening", "weekend"].includes(item)))) &&
+  (p.morningCapacity === undefined || p.morningCapacity === 1 || p.morningCapacity === 2) &&
+  (p.assignments === undefined || record(p.assignments,"string")) &&
+  (p.releasedSlots === undefined || record(p.releasedSlots,"string")) &&
+  (p.missedJobPolicy === undefined || ["next-morning", "one-hour", "manual"].includes(p.missedJobPolicy));
 }

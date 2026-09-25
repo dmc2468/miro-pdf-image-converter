@@ -1,10 +1,12 @@
+import { LogisticsFields } from "./logistics-fields";
+import { workflowFields, type Logistics } from "../../shared/stringing-scheduling";
 import { CalculationInput } from "./CalculationInput";
 import { ReferralFields } from "./Referrals";
 import type { Referrer } from "./referral-rewards";
 "use client";
 import { useMemo, useState } from "react";
 
-export interface OrderRow {
+export interface OrderRow extends Logistics {
   referrerId?: string;
   rewardForId?: string;
   referralRedeemed?: boolean;
@@ -15,7 +17,7 @@ export interface OrderRow {
   row: number;
   name: string;
   date?: string | null;
-  collectionDate?: string | null;
+  completionDate?: string | null;
   racquet?: string | null;
   main?: string | null;
   cross?: string | null;
@@ -45,7 +47,8 @@ const empty = (
     ) + 1,
   name: "",
   date: new Date().toISOString().slice(0, 10),
-  collectionDate: "",
+  completionDate: "",
+  workflowStatus: "Ready to string",
   racquet: "",
   main: "",
   cross: "",
@@ -134,7 +137,7 @@ export function NewOrderDialog({
     });
   };
   const save = () => {
-    if (!draft || !draft.name.trim() || !draft.date || !draft.collectionDate)
+    if (!draft || !draft.name.trim() || !draft.date || !draft.completionDate)
       return;
     const result =
       draft.source === "private"
@@ -225,14 +228,14 @@ export function NewOrderDialog({
                 />
               </label>
               <label>
-                Collection date
+                Completion date
                 <input
                   required
                   type="date"
                   min={String(draft.date || "").slice(0, 10)}
-                  value={String(draft.collectionDate || "").slice(0, 10)}
+                  value={String(draft.completionDate || "").slice(0, 10)}
                   onChange={(e) =>
-                    setDraft({ ...draft, collectionDate: e.target.value })
+                    setDraft({ ...draft, completionDate: e.target.value })
                   }
                 />
               </label>
@@ -331,7 +334,7 @@ export function NewOrderDialog({
                 <select
                   value={["complete", "completed"].includes(String(draft.status).toLowerCase()) ? "Completed" : "To Do"}
                   onChange={(e) =>
-                    setDraft({ ...draft, status: e.target.value })
+                    setDraft({ ...draft, ...workflowFields(e.target.value === "Completed" ? "Completed" : "Ready to string") })
                   }
                 >
                   <option>To Do</option>
@@ -361,6 +364,7 @@ export function NewOrderDialog({
                   )}
                 </select>
               </label>
+              <LogisticsFields row={draft} onChange={fields=>setDraft({...draft,...fields,...(fields.workflowStatus?workflowFields(fields.workflowStatus):{})})}/>
               {source === "private" ? <ReferralFields order={draft} rows={rows} referrers={referrers} onAdd={onAddReferrer} onChange={fields => setDraft({ ...draft, ...fields })} /> : null}
               <label className="wide">
                 Notes
