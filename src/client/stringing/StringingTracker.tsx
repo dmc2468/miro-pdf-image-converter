@@ -506,7 +506,7 @@ export function StringingTracker({
         ) : null}
         <PlannerReminders rows={rows} settings={planner} ready={storageReady.current} />
         {view === "planner" ? <Planner rows={rows} settings={planner} ready={storageReady.current} onSettings={setPlanner} onUpdate={(id,fields)=>{setUndo(rows);setRows(current=>current.map(row=>row.id===id?{...row,...fields,...(fields.workflowStatus?workflowFields(fields.workflowStatus):{})}:row))}} onEdit={id=>setDraft(rows.find(row=>row.id===id)??null)}/> : null}
-        {view === "dm" ? <DmRackets jobs={dmRackets} onChange={setDmRackets} /> : null}
+        {view === "dm" ? <DmRackets strings={strings} jobs={dmRackets} onChange={setDmRackets} /> : null}
         {view === "summary" ? <SummaryDashboard rows={rows} adjustments={adjustments} expenses={expenses} /> : null}
         {view === "referrals" ? <Referrals rows={rows} referrers={referrers} onAdd={saveReferrer} onChange={saveReferrer} onEditClient={id => setDraft(rows.find(row => row.id === id) ?? null)} /> : null}
         {view === "analytics" ? <Analytics rows={rows} /> : null}

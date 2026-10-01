@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useRef, type PointerEvent } from "react";
 import { SchedulePreferences } from "./schedule-preferences";
 import { MoveRacketDialog } from "./move-racket-dialog";
 import { StringingCalendar } from "./stringing-calendar";
-import { makePlan, slotsFor, visitEnabled, prettyDay, stage, isClub, preferenceOrder, preferenceLabels, normalizeSlotId, slotTime, type PlannerRow, type PlannerSettings, type Period, type Logistics } from "../../shared/stringing-scheduling";
+import { makePlan, slotsFor, visitEnabled, prettyDay, stage, isClub, preferenceOrder, preferenceLabels, toggleStringingSlot, toggleStringingDay, eveningTennis, slotTime, type PlannerRow, type PlannerSettings, type Period, type Logistics } from "../../shared/stringing-scheduling";
 export function Planner({ rows, settings, onSettings, onUpdate, onEdit, ready = true }: {
     ready?: boolean;
     rows: PlannerRow[];
@@ -86,7 +86,7 @@ export function Planner({ rows, settings, onSettings, onUpdate, onEdit, ready = 
     const movingRow = move ? plan.active.find(r => r.id === move.id && ["Ready to string", "Awaiting collection"].includes(stage(r))) : undefined;
     function requestMove(id: string, date: string, slot?: string) { if (!plan.active.some(r => r.id === id && ["Ready to string", "Awaiting collection"].includes(stage(r))))
         return; setMove({ id, date, slot }); setDragging(null); setDropTarget(null); }
-    const toggleSlot = (id: string) => { const unavailable = settings.unavailable.map(normalizeSlotId); onSettings({ ...settings, unavailable: unavailable.includes(id) ? unavailable.filter(x => x !== id) : [...unavailable, id] }); };
+    const toggleSlot = (id: string) => onSettings(toggleStringingSlot(id, settings));
     function progress(row: PlannerRow) { setNow(new Date()); if (stage(row) === "Awaiting collection")
         onUpdate(row.id, { workflowStatus: "Ready to string" });
     else if (stage(row) === "Ready to string")
@@ -107,7 +107,7 @@ export function Planner({ rows, settings, onSettings, onUpdate, onEdit, ready = 
  {tab === "calendar" ? <>
  <div className="planner-toolbar"><div><h2>Your calendar</h2><p>{preferenceOrder(settings).map(id => preferenceLabels[id]).join(" \u2192 ")}.</p><p>Updates every 15 seconds. Unconfirmed jobs stay in place {settings.missedJobPolicy === "manual" ? "until you reschedule them" : settings.missedJobPolicy === "one-hour" ? "for one hour after the slot ends" : "until 6am the next morning"}. Completing a racket frees its slot immediately.</p></div></div>
  {plan.awaitingConfirmation.size > 0 && <div className="awaiting-confirmation-note"><span>{plan.awaitingConfirmation.size} {plan.awaitingConfirmation.size === 1 ? "racket is" : "rackets are"} awaiting completion confirmation. Mark completed when ready.</span><button className="secondary" onClick={() => onSettings({ ...settings, releasedSlots: { ...settings.releasedSlots, ...Object.fromEntries([...plan.awaitingConfirmation].map(id => [id, plan.assignments[id].id])) } })}>Reschedule missed jobs</button></div>}
- <StringingCalendar plan={plan} settings={settings} now={now} dragging={dragging} dropTarget={dropTarget} onTarget={setDropTarget} onMove={requestMove} onToggle={toggleSlot} onToggleDay={day => onSettings({ ...settings, unavailableDays: settings.unavailableDays?.includes(day) ? settings.unavailableDays.filter(d => d !== day) : [...(settings.unavailableDays || []), day] })} card={card}/>
+ <StringingCalendar plan={plan} settings={settings} now={now} dragging={dragging} dropTarget={dropTarget} onTarget={setDropTarget} onMove={requestMove} onToggle={toggleSlot} onToggleDay={day => onSettings(toggleStringingDay(day, settings))} onToggleTennis={day => onSettings({...settings, visits:{...settings.visits, [`${day}:Evening`]:!eveningTennis(day, settings)}})} card={card}/>
 
  {Object.keys(plan.issues).length > 0 && <section className="planner-attention"><h2>Needs a decision · {Object.keys(plan.issues).length}</h2>{plan.active.filter(r => plan.issues[r.id]).map(r => <div className="planner-issue-row" key={r.id}><button onClick={() => onEdit(r.id)}><strong>{r.name}</strong><span>{plan.issues[r.id]}</span><b>Edit →</b></button><div className="racket-move-actions"><button onClick={() => requestMove(r.id, plan.today)}>Move</button>{stage(r) === "Ready to string" && <button onClick={() => progress(r)}>✓ Mark completed</button>}{plan.manualIds.has(r.id) && <button onClick={() => onUpdate(r.id, { manualSlot: null })}>Use auto schedule</button>}</div></div>)}</section>}
  {!plan.active.length && <div className="planner-empty"><h2>No active rackets</h2><p>Add a new order to plan it. Historical completed jobs stay out of your schedule.</p></div>}

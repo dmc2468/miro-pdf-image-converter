@@ -33,3 +33,12 @@ describe("planner state protection", () => {
     expect(wouldDiscardTrackerData(base, { ...base, planner })).toBe(false);
   });
 });
+
+it("preserves individually unlocked slots against saves from an older planner",()=>{
+ const planner={unavailable:[],visits:{},availableSlots:["2026-10-06:18"]};
+ const state={rows:[],adjustments:[],sundries:[],planner};
+ expect(isStringingState(state)).toBe(true);
+ expect(isStringingState({...state,planner:{...planner,availableSlots:"invalid"}})).toBe(false);
+ expect(wouldDiscardTrackerData(state,{...state,planner:{unavailable:[],visits:{}}})).toBe(true);
+ expect(wouldDiscardTrackerData(state,state)).toBe(false);
+});

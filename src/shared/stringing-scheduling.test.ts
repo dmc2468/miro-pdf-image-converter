@@ -1,13 +1,13 @@
 import { test } from "vitest";
 import type { PlannerRow, PlannerSettings } from "./stringing-scheduling.js";
 import assert from "node:assert/strict";
-import { makePlan, emptyPlanner, stage, migrateRow, slotsFor, visitEnabled, preferenceOrder, slotBlockReason, slotTime, calendarDaysFor, mondayOf, weekday, normalizeSlotId, slotExpired, activeManualSlot, rescheduleDue } from "./stringing-scheduling.js";
+import { toggleStringingSlot, toggleStringingDay, makePlan, emptyPlanner, stage, migrateRow, slotsFor, visitEnabled, preferenceOrder, slotBlockReason, slotTime, calendarDaysFor, mondayOf, weekday, normalizeSlotId, slotExpired, activeManualSlot, rescheduleDue } from "./stringing-scheduling.js";
 const now = new Date("2026-09-21T05:00:00Z");
 const job = (id: string, extra: Partial<PlannerRow> = {}): PlannerRow => ({ id, name: id, source: "private", workflowStatus: "Ready to string", date: "2026-09-21", completionDate: "2026-09-25", ...extra });
 const snapshot = (p: ReturnType<typeof makePlan>) => Object.fromEntries(Object.entries(p.assignments).map(([id, s]) => [id, s.id]));
 test("exact 30-minute weekday slots and chronological display", () => {
     assert.deepEqual(slotsFor("2026-09-21", emptyPlanner).map(slotTime), ["07:30\u201308:00", "08:00\u201308:30", "13:30\u201314:00", "18:00\u201318:30", "18:30\u201319:00"]);
-    assert.deepEqual(slotsFor("2026-09-22", emptyPlanner).map(slotTime), ["07:30\u201308:00", "08:00\u201308:30", "13:30\u201314:00"]);
+    assert.deepEqual(slotsFor("2026-09-22", emptyPlanner).filter(slot => slot.available).map(slotTime), ["07:30\u201308:00", "08:00\u201308:30", "13:30\u201314:00"]);
     assert.deepEqual(slotsFor("2026-09-26", emptyPlanner).map(slotTime), ["10:00\u201310:30", "14:00\u201314:30"]);
 });
 test("prefers weekday lunch and earliest deadlines without duplicate slots", () => {
@@ -240,4 +240,38 @@ test("planner progress also updates the existing completed job status", async ()
   for (const state of ["Awaiting collection", "Ready to string"] as const) {
     assert.equal(workflowFields(state).status, "To Do");
   }
+});
+
+test("Tuesday and Wednesday evenings are visible but off until individually enabled", () => {
+ for (const day of ["2026-09-22", "2026-09-23"]) {
+  const evening = slotsFor(day, emptyPlanner).filter(slot => slot.group === "evening");
+  assert.deepEqual(evening.map(slot => slot.hour), [18,18.5]);
+  assert.ok(evening.every(slot => !slot.available));
+  const enabled = toggleStringingSlot(`${day}:18`, emptyPlanner);
+  assert.equal(slotsFor(day, enabled).find(slot => slot.hour === 18)?.available, true);
+  assert.equal(slotsFor(day, enabled).find(slot => slot.hour === 18.5)?.available, false);
+  assert.equal(slotBlockReason(job("one"), slotsFor(day, enabled).find(slot => slot.hour === 18)!, undefined, enabled, now), undefined);
+  assert.equal(visitEnabled(day,"Evening",enabled),true);
+  assert.equal(slotsFor(day,toggleStringingSlot(`${day}:18`,enabled)).find(slot => slot.hour === 18)?.available,false);
+ }
+});
+test("removing tennis frees both evening slots and restores the default block when re-added", () => {
+ const settings = {...emptyPlanner,visits:{"2026-09-22:Evening":false}};
+ assert.ok(slotsFor("2026-09-22", settings).filter(slot=>slot.group==="evening").every(slot=>slot.available));
+ assert.equal(visitEnabled("2026-09-22","Evening",settings),false);
+ const plan = makePlan([job("evening",{date:"2026-09-22",completionDate:"2026-09-22"})],{...settings,preferences:["evening","lunch","morning","weekend"]},now);
+ assert.equal(plan.assignments.evening.id,"2026-09-22:18");
+ assert.ok(slotsFor("2026-09-22", {...settings,visits:{"2026-09-22:Evening":true}}).filter(slot=>slot.group==="evening").every(slot=>!slot.available));
+});
+test("one slot can reopen on a blocked day without reopening the day or club visits", () => {
+ const day = "2026-09-22";
+ const blocked = toggleStringingDay(day, emptyPlanner);
+ const reopened = toggleStringingSlot(`${day}:18.5`,blocked);
+ assert.deepEqual(slotsFor(day,reopened).filter(slot=>slot.available).map(slot=>slot.hour),[18.5]);
+ assert.ok(reopened.unavailableDays?.includes(day));
+ assert.equal(visitEnabled(day,"Evening",reopened),false);
+ assert.ok(slotsFor(day,toggleStringingSlot(`${day}:18.5`,reopened)).every(slot=>!slot.available));
+ const reset = toggleStringingDay(day,toggleStringingDay(day,reopened));
+ assert.ok(slotsFor(day,reset).every(slot=>!slot.available));
+ assert.deepEqual(reset.availableSlots,[]);
 });

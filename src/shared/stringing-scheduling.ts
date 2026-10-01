@@ -29,10 +29,11 @@ export interface PlannerRow extends Logistics {
 export type Period = "AM" | "PM" | "Evening";
 export type Preference = "lunch" | "evening" | "morning" | "weekend";
 export const defaultPreferences: Preference[] = ["lunch", "evening", "morning", "weekend"];
-export const preferenceLabels: Record<Preference, string> = { lunch: "Weekday lunchtimes", evening: "Monday, Thursday & Friday evenings", morning: "Weekday mornings", weekend: "Weekends" };
+export const preferenceLabels: Record<Preference, string> = { lunch: "Weekday lunchtimes", evening: "Weekday evenings", morning: "Weekday mornings", weekend: "Weekends" };
 export interface PlannerSettings {
     unavailable: string[];
     unavailableDays?: string[];
+    availableSlots?: string[];
     visits: Record<string, boolean>;
     preferences?: Preference[];
     morningCapacity?: 1 | 2;
@@ -116,8 +117,8 @@ export function slotsFor(date: string, settings: PlannerSettings): Slot[] {
     const dow = weekday(date);
     const items = dow === 0 || dow === 6
         ? [{ hour: 10, label: "Weekend \u00B7 racket 1", group: "weekend" as Preference }, { hour: 14, label: "Weekend \u00B7 racket 2", group: "weekend" as Preference }]
-        : [{ hour: 7.5, label: "Morning \u00B7 racket 1", group: "morning" as Preference }, ...(settings.morningCapacity === 1 ? [] : [{ hour: 8, label: "Morning \u00B7 racket 2", group: "morning" as Preference }]), { hour: 13.5, label: "Lunchtime", group: "lunch" as Preference }, ...([1, 4, 5].includes(dow) ? [{ hour: 18, label: "Evening \u00B7 racket 1", group: "evening" as Preference }, { hour: 18.5, label: "Evening \u00B7 racket 2", group: "evening" as Preference }] : [])];
-    return items.map(s => ({ ...s, rank: ranks.indexOf(s.group), date, id: `${date}:${s.hour}`, available: !settings.unavailableDays?.includes(date) && !settings.unavailable.map(normalizeSlotId).includes(`${date}:${s.hour}`) }));
+        : [{ hour: 7.5, label: "Morning \u00B7 racket 1", group: "morning" as Preference }, ...(settings.morningCapacity === 1 ? [] : [{ hour: 8, label: "Morning \u00B7 racket 2", group: "morning" as Preference }]), { hour: 13.5, label: "Lunchtime", group: "lunch" as Preference }, ...[{ hour: 18, label: "Evening \u00B7 racket 1", group: "evening" as Preference }, { hour: 18.5, label: "Evening \u00B7 racket 2", group: "evening" as Preference }]];
+    return items.map(s => ({ ...s, rank: ranks.indexOf(s.group), date, id: `${date}:${s.hour}`, available: !settings.unavailable.map(normalizeSlotId).includes(`${date}:${s.hour}`) && (!!settings.availableSlots?.includes(`${date}:${s.hour}`) || (!settings.unavailableDays?.includes(date) && !(s.group === "evening" && [2, 3].includes(dow) && eveningTennis(date, settings)))) }));
 }
 export function visitEnabled(date: string, period: Period, settings: PlannerSettings) { return !settings.unavailableDays?.includes(date) && (settings.visits[`${date}:${period}`] ?? ([2, 3].includes(weekday(date)) && period === "Evening")); }
 export function slotBlockReason(row: PlannerRow, slot: Slot, pickup: Visit | undefined, settings: PlannerSettings, now: Date, allowRunning = false): string | undefined {
@@ -288,4 +289,21 @@ export function dueReminders(plan: ReturnType<typeof makePlan>, now: Date) {
 }
 export function workflowFields(workflowStatus: Stage): Pick<PlannerRow, "workflowStatus" | "status"> {
     return { workflowStatus, status: workflowStatus === "Completed" || workflowStatus === "Delivered" ? "Completed" : "To Do" };
+}
+
+export function eveningTennis(date: string, settings: PlannerSettings): boolean {
+ return settings.visits[`${date}:Evening`] ?? [2, 3].includes(weekday(date));
+}
+
+export function toggleStringingSlot(id: string, settings: PlannerSettings): PlannerSettings {
+ const normalId = normalizeSlotId(id);
+ const enabled = slotsFor(normalId.split(":")[0], settings).find(slot => slot.id === normalId)?.available;
+ const unavailable = settings.unavailable.map(normalizeSlotId).filter(slot => slot !== normalId);
+ const availableSlots = (settings.availableSlots ?? []).filter(slot => slot !== normalId);
+ return {...settings, unavailable: enabled ? [...unavailable, normalId] : unavailable, availableSlots: enabled ? availableSlots : [...availableSlots, normalId]};
+}
+
+export function toggleStringingDay(date: string, settings: PlannerSettings): PlannerSettings {
+ const unavailableDays = settings.unavailableDays ?? [];
+ return {...settings, unavailableDays: unavailableDays.includes(date) ? unavailableDays.filter(day => day !== date) : [...unavailableDays, date], availableSlots: (settings.availableSlots ?? []).filter(slot => !slot.startsWith(`${date}:`))};
 }

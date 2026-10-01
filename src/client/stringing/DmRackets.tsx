@@ -1,8 +1,9 @@
+import { StringChoice, type StringOption } from "./string-choice";
 import { useState } from "react";
 import { dmSavings, nextDmJobNumber, sortedDmJobs, type DmRacketJob } from "../../shared/dm-rackets";
 import "./dm-rackets.css";
 
-export function DmRackets({ jobs, onChange }: { jobs: DmRacketJob[]; onChange: (jobs: DmRacketJob[]) => void }) {
+export function DmRackets({ jobs, onChange, strings }: { strings: StringOption[]; jobs: DmRacketJob[]; onChange: (jobs: DmRacketJob[]) => void }) {
   const [draft, setDraft] = useState<DmRacketJob | null>(null);
   const money = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(value);
   function add() {
@@ -23,8 +24,8 @@ export function DmRackets({ jobs, onChange }: { jobs: DmRacketJob[]; onChange: (
     }}><div className="edit-head"><div><h2 id="dm-job-title">DM job #{draft.jobNumber}</h2><small>Record a completed restringing job.</small></div><button type="button" aria-label="Close" onClick={() => setDraft(null)}>×</button></div><div className="edit-grid">
       <label>Date<input autoFocus required type="date" value={draft.date} onChange={event => setDraft({ ...draft, date: event.target.value })} /></label>
       <label>Racket<input value={draft.racket} onChange={event => setDraft({ ...draft, racket: event.target.value })} /></label>
-      <label>Mains string type<input required value={draft.mains} onChange={event => setDraft({ ...draft, mains: event.target.value })} /></label>
-      <label>Crosses string type<input required value={draft.crosses} onChange={event => setDraft({ ...draft, crosses: event.target.value })} /></label>
+      <label>Mains string type<StringChoice required strings={strings} value={draft.mains} onChange={value => setDraft({ ...draft, mains: value })} /></label>
+      <label>Crosses string type<StringChoice required strings={strings} value={draft.crosses} onChange={value => setDraft({ ...draft, crosses: value })} /></label>
       <label>Tension<input placeholder="e.g. 52 / 50 lbs" value={draft.tension} onChange={event => setDraft({ ...draft, tension: event.target.value })} /></label>
       <label className="wide">Notes<textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} /></label>
     </div><div className="modal-actions"><button type="button" className="secondary" onClick={() => setDraft(null)}>Cancel</button><button className="primary">Save job</button></div></form></div> : null}

@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from "react";
-import { slotsFor, slotTime, prettyDay, weekday, clockValue, slotDuration, type PlannerRow, type PlannerSettings, type Preference, type makePlan } from "../../shared/stringing-scheduling";
+import { eveningTennis, slotsFor, slotTime, prettyDay, weekday, clockValue, slotDuration, type PlannerRow, type PlannerSettings, type Preference, type makePlan } from "../../shared/stringing-scheduling";
 type Plan = ReturnType<typeof makePlan>;
-export function StringingCalendar({ plan, settings, now, dragging, dropTarget, onTarget, onMove, onToggle, onToggleDay, card }: {
+export function StringingCalendar({ plan, settings, now, dragging, dropTarget, onTarget, onMove, onToggle, onToggleDay, onToggleTennis, card }: {
     plan: Plan;
     settings: PlannerSettings;
     now: Date;
@@ -11,6 +11,7 @@ export function StringingCalendar({ plan, settings, now, dragging, dropTarget, o
     onMove: (id: string, date: string, slot?: string) => void;
     onToggle: (id: string) => void;
     onToggleDay: (day: string) => void;
+    onToggleTennis: (day: string) => void;
     card: (row: PlannerRow, kind: "string") => ReactNode;
 }) {
     const refs = useRef<Record<string, HTMLElement | null>>({});
@@ -40,7 +41,7 @@ export function StringingCalendar({ plan, settings, now, dragging, dropTarget, o
        <div className="slot-head"><span>{slotTime(slot)}{running && <small>Current slot</small>}</span><button aria-label={`${slot.available ? "Make unavailable" : "Make available"} ${prettyDay(day)} ${slot.label} ${slotTime(slot)}`} title={slot.available ? "Make unavailable" : "Make available"} aria-pressed={!slot.available} disabled={day < plan.today} onClick={() => onToggle(slot.id)}>{slot.available ? "\u2212" : "+"}</button></div>
        {assigned ? card(assigned, "string") : <span className="slot-empty">{passed || !slot.available ? "" : "Available"}</span>}
       </div>;
-                        })}{!settings.unavailableDays?.includes(day) && !weekend && group === "evening" && !slots.some(s => s.group === group) && <p className="no-session">Tennis at the club</p>}</section>)}</div>
+                        })}{group === "evening" && [2,3].includes(weekday(day)) && <button className="tennis-toggle" disabled={day < plan.today} aria-label={`${eveningTennis(day,settings)?"Remove":"Restore"} evening tennis ${prettyDay(day)}`} onClick={()=>onToggleTennis(day)}>{eveningTennis(day,settings)?"− Remove evening tennis":"+ Restore evening tennis"}</button>}</section>)}</div>
      <div className="day-visits">{plan.visits.filter(v => v.date === day).map(v => <div className="club-visit" key={v.id}><strong>David Lloyd · {v.period}</strong><small>{plan.active.filter(r => plan.pickups[r.id]?.id === v.id).length} collect · {plan.active.filter(r => plan.deliveries[r.id]?.id === v.id).length} return</small></div>)}</div>
     </section>;
             })}</div>

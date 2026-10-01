@@ -153,7 +153,7 @@ function isStringingReferrer(value: unknown): value is StringingReferrer {
 }
 
 export function wouldDiscardTrackerData(current: StringingState | undefined, incoming: StringingState): boolean {
-  return (current?.planner !== undefined && incoming.planner === undefined) || (current?.referrers !== undefined && incoming.referrers === undefined) || (current?.dmRackets !== undefined && incoming.dmRackets === undefined);
+  return (current?.planner?.availableSlots !== undefined && incoming.planner?.availableSlots === undefined) || (current?.planner !== undefined && incoming.planner === undefined) || (current?.referrers !== undefined && incoming.referrers === undefined) || (current?.dmRackets !== undefined && incoming.dmRackets === undefined);
 }
 
 function isDmRacketJob(value: unknown): value is DmRacketJob {
@@ -169,6 +169,7 @@ function isPlannerSettings(value: unknown): value is PlannerSettings {
  const record = (v: unknown, kind: "string" | "boolean") => !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every(item => typeof item === kind);
  return strings(p.unavailable) && record(p.visits, "boolean") &&
   (p.unavailableDays === undefined || strings(p.unavailableDays)) &&
+  (p.availableSlots === undefined || strings(p.availableSlots)) &&
   (p.preferences === undefined || (strings(p.preferences) && p.preferences.every(item => ["morning", "lunch", "evening", "weekend"].includes(item)))) &&
   (p.morningCapacity === undefined || p.morningCapacity === 1 || p.morningCapacity === 2) &&
   (p.assignments === undefined || record(p.assignments,"string")) &&

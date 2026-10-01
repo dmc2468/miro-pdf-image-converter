@@ -1,3 +1,4 @@
+import { StringChoice, stringLabel } from "./string-choice";
 import { LogisticsFields } from "./logistics-fields";
 import { workflowFields, type Logistics } from "../../shared/stringing-scheduling";
 import { CalculationInput } from "./CalculationInput";
@@ -83,15 +84,6 @@ export function NewOrderDialog({
   const source = (draft?.source === "prostring" ? "prostring" : "private") as
     | "private"
     | "prostring";
-  const stringLabel = (item: (typeof strings)[number]) =>
-    `${item.brand} ${item.name}${item.gauge ? ` · ${item.gauge} mm` : ""}`;
-  const selectedStringValue = draft
-    ? strings.find(
-        (item) =>
-          stringLabel(item) === draft.main ||
-          `${item.brand} ${item.name}` === draft.main,
-      )
-    : undefined;
   const customers = useMemo(
     () =>
       Array.from(
@@ -258,17 +250,12 @@ export function NewOrderDialog({
               </label>
               <label>
                 Main string
-                <select value={selectedStringValue ? stringLabel(selectedStringValue) : draft.main || ""} onChange={(e) => {const selected=strings.find(x=>stringLabel(x)===e.target.value);setDraft({...draft,main:e.target.value,stringCost:selected?.costPerRacket??0,customerPrice:selected?.customerPriceOverride??selected?.priceToCustomer??draft.customerPrice})}}><option value="">Choose string and gauge</option>{draft.main&&!selectedStringValue?<option value={draft.main}>{draft.main} (existing)</option>:null}{strings.map(x=><option key={x.id} value={stringLabel(x)}>{stringLabel(x)}</option>)}</select>
+                <StringChoice strings={strings} value={draft.main || ""} onChange={value => { const selected = strings.find(item => stringLabel(item) === value); setDraft({...draft, main:value, stringCost:selected?.costPerRacket??0, customerPrice:selected?.customerPriceOverride??selected?.priceToCustomer??draft.customerPrice}); }} />
               </label>
               {source === "private" ? <label>String cost<input readOnly type="number" value={n(draft.stringCost)} /></label> : null}
               <label>
                 Cross string
-                <input
-                  value={draft.cross || ""}
-                  onChange={(e) =>
-                    setDraft({ ...draft, cross: e.target.value })
-                  }
-                />
+                <StringChoice strings={strings} value={draft.cross || ""} onChange={value => setDraft({...draft, cross:value})} />
               </label>
               <label className={source === "prostring" ? "wide" : undefined}>
                 Tension
