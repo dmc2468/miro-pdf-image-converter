@@ -20,13 +20,19 @@ const execFileAsync = promisify(execFile);
 const MIRO_TILE_MAX_WIDTH = 5600;
 const MIRO_TILE_MAX_HEIGHT = 3900;
 const MIRO_TILE_MAX_AREA = 15_900_000;
-const PDF_RENDER_MAX_DIMENSION = 8000;
+const PDF_RENDER_MAX_DIMENSION = 6000;
+const PDF_RENDER_TIMEOUT_MS = 120_000;
 sharp.cache(false);
 sharp.concurrency(1);
 
 interface ImageDimensions {
   width: number;
   height: number;
+}
+
+interface ChildProcessError extends Error {
+  killed?: boolean;
+  signal?: string;
 }
 
 interface TileRegion {
@@ -252,6 +258,7 @@ export class ConversionService {
       const prefix = path.join(input.renderDir, `${input.jobId}-${baseName}`);
       await execFileAsync("pdftoppm", ["-jpeg", "-scale-to", String(pdfRenderMaxDimension(input.targetPixelWidth, input.orientation)), file.path, prefix], {
         maxBuffer: 1024 * 1024 * 20,
+        timeout: PDF_RENDER_TIMEOUT_MS,
       });
 
       const renderedPages = (await fs.readdir(input.renderDir))
@@ -412,11 +419,20 @@ function outputImageName(baseName: string, multiPage: boolean, pageIndex: number
 }
 
 export function conversionFailureMessage(error: unknown, targetPixelWidth: number): string {
+  if (isConversionTimeoutError(error)) {
+    return "This PDF took too long to render and was stopped. Please retry it; if it happens again, split the PDF into smaller files.";
+  }
   if (!isConversionMemoryError(error)) {
     return error instanceof Error ? error.message : "Conversion failed.";
   }
 
   return `The converter ran out of memory while creating the ${targetPixelWidth}px-wide JPEG. Please try again shortly; if it keeps happening, the production machine needs more memory for this drawing size.`;
+}
+
+function isConversionTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const processError = error as ChildProcessError;
+  return processError.killed === true || processError.signal === "SIGKILL" || error.message.toLowerCase().includes("timed out");
 }
 
 function isConversionMemoryError(error: unknown): boolean {

@@ -41,6 +41,10 @@ startxref
 %%EOF
 `);
 
+interface KilledProcessError extends Error {
+  killed: boolean;
+}
+
 describe.skipIf(!hasPoppler())("ConversionService parity", () => {
   let tempRoot: string;
   let uploadPath: string;
@@ -131,6 +135,14 @@ describe("conversionFailureMessage", () => {
   it("keeps non-memory conversion failures intact", () => {
     expect(conversionFailureMessage(new Error("No pages were rendered from the uploaded PDF."), 20900)).toBe("No pages were rendered from the uploaded PDF.");
   });
+
+  it("turns render timeouts into an actionable message", () => {
+    const error = new Error("Command failed: pdftoppm") as KilledProcessError;
+    error.killed = true;
+    expect(conversionFailureMessage(error, 8410)).toBe(
+      "This PDF took too long to render and was stopped. Please retry it; if it happens again, split the PDF into smaller files.",
+    );
+  });
 });
 
 describe("PDF render sizing", () => {
@@ -140,8 +152,8 @@ describe("PDF render sizing", () => {
   });
 
   it("caps oversized source renders to protect production memory", () => {
-    expect(pdfRenderMaxDimension(8410, "Landscape")).toBe(8000);
-    expect(pdfRenderMaxDimension(21000, "Portrait")).toBe(8000);
+    expect(pdfRenderMaxDimension(8410, "Landscape")).toBe(6000);
+    expect(pdfRenderMaxDimension(21000, "Portrait")).toBe(6000);
   });
 });
 
